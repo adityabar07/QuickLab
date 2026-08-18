@@ -3,10 +3,24 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-<title>QuickLab — instant, anonymous Python notebook</title>
+<title>QuickLab — Instant Interactive Python Notebook</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- CodeMirror -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+<!-- Marked (Markdown) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<!-- Plotly.js -->
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<!-- Pyodide Fallback -->
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
+
 <style>
   :root{
     --bg:#0b0f14;
@@ -62,14 +76,14 @@
 
   /* ---------- Top bar ---------- */
   #topbar{
-    display:flex;align-items:center;gap:12px;
+    display:flex;align-items:center;gap:10px;
     height:50px;min-height:50px;
-    padding:0 14px;
+    padding:0 12px;
     background:var(--bg-panel);
     border-bottom:1px solid var(--border);
     z-index:20;
   }
-  .brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.2px;font-size:15.5px;}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.2px;font-size:15.5px;}
   .brand .mark{
     width:22px;height:22px;border-radius:6px;
     background:linear-gradient(135deg,var(--accent),var(--md));
@@ -79,9 +93,9 @@
   .brand .tag{color:var(--text-faint);font-weight:500;font-size:11.5px;border:1px solid var(--border);padding:2px 7px;border-radius:20px;margin-left:2px;}
   #topbar .divider{width:1px;height:24px;background:var(--border);margin:0 2px;}
   .tbtn{
-    display:flex;align-items:center;gap:7px;
+    display:flex;align-items:center;gap:6px;
     background:transparent;border:1px solid transparent;color:var(--text-dim);
-    padding:7px 11px;border-radius:6px;font-size:13.5px;font-family:inherit;font-weight:500;cursor:pointer;
+    padding:6px 10px;border-radius:6px;font-size:13px;font-family:inherit;font-weight:500;cursor:pointer;
     white-space:nowrap;transition:background .15s ease, color .15s ease;
   }
   .tbtn:hover{background:var(--bg-elevated);color:var(--text);}
@@ -92,7 +106,7 @@
   #topbar-spacer{flex:1;}
   .kernel-pill{
     display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text-dim);
-    padding:6px 11px;border:1px solid var(--border);border-radius:20px;
+    padding:5px 12px;border:1px solid var(--border);border-radius:20px;background:var(--bg-cell);
   }
   .dot{width:7.5px;height:7.5px;border-radius:50%;background:var(--text-faint);flex:none;}
   .dot.ready{background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
@@ -118,13 +132,29 @@
 
   /* ---------- Body layout ---------- */
   #body{flex:1;display:flex;min-height:0;position:relative;}
+  
+  /* Sidebar Navigation Tabs */
   #sidebar{
-    width:250px;min-width:250px;background:var(--bg-panel);border-right:1px solid var(--border);
+    width:280px;min-width:280px;background:var(--bg-panel);border-right:1px solid var(--border);
     display:flex;flex-direction:column;overflow:hidden;
     transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
   }
   #sidebar.collapsed{width:0;min-width:0;border-right:none;visibility:hidden;opacity:0;}
-  .side-section{padding:14px 14px 8px;}
+  
+  .side-nav{
+    display:flex;border-bottom:1px solid var(--border);padding:4px 8px;gap:4px;background:var(--bg-cell);
+  }
+  .side-nav-btn{
+    flex:1;padding:6px 4px;font-size:11.5px;font-weight:600;color:var(--text-dim);
+    background:transparent;border:none;border-radius:5px;cursor:pointer;text-align:center;
+  }
+  .side-nav-btn:hover{color:var(--text);background:var(--bg-elevated);}
+  .side-nav-btn.active{color:var(--accent);background:var(--bg-elevated);}
+
+  .tab-pane{display:none;flex:1;flex-direction:column;overflow-y:auto;}
+  .tab-pane.active{display:flex;}
+
+  .side-section{padding:12px 14px 6px;}
   .side-title{
     font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);
     font-weight:700;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;
@@ -132,7 +162,7 @@
   #outline{flex:1;overflow-y:auto;padding:0 10px 14px;}
   .outline-item{
     display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;
-    color:var(--text-dim);font-size:13px;
+    color:var(--text-dim);font-size:12.5px;
   }
   .outline-item:hover{background:var(--bg-elevated);color:var(--text);}
   .outline-item .badge{
@@ -142,18 +172,43 @@
   .outline-item.md .badge{color:var(--md);}
 
   .upload-zone{
-    border:1.5px dashed var(--border);border-radius:8px;padding:16px 12px;text-align:center;
-    color:var(--text-faint);font-size:12px;line-height:1.5;cursor:pointer;margin:0 14px 10px;
+    border:1.5px dashed var(--border);border-radius:8px;padding:14px 10px;text-align:center;
+    color:var(--text-faint);font-size:11.5px;line-height:1.5;cursor:pointer;margin:0 12px 10px;
   }
   .upload-zone:hover{border-color:var(--accent);color:var(--accent);}
-  #file-list{padding:0 14px 14px;max-height:160px;overflow-y:auto;}
+  #file-list{padding:0 12px 12px;max-height:160px;overflow-y:auto;}
   .file-item{
     display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);
-    padding:5px 0;
+    padding:5px 0;border-bottom:1px solid var(--border-soft);
   }
   .file-item .fname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);}
-  .file-item button{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13.5px;padding:2px 5px;}
+  .file-item button{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;padding:2px 4px;}
   .file-item button:hover{color:var(--error);}
+
+  /* Package list */
+  #pkg-search{
+    margin:8px 12px;padding:7px 10px;background:var(--bg-elevated);border:1px solid var(--border);
+    border-radius:6px;color:var(--text);font-size:12px;outline:none;
+  }
+  #pkg-list{padding:0 12px 14px;overflow-y:auto;}
+  .pkg-card{
+    padding:8px 10px;background:var(--bg-cell);border:1px solid var(--border-soft);
+    border-radius:6px;margin-bottom:6px;
+  }
+  .pkg-head{display:flex;align-items:center;justify-content:space-between;font-weight:600;font-size:12.5px;}
+  .pkg-cat{font-size:10px;color:var(--accent);background:var(--accent-dim);padding:1px 6px;border-radius:10px;}
+  .pkg-desc{font-size:11px;color:var(--text-faint);margin-top:3px;}
+  .pkg-ver{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);}
+
+  /* Variables list */
+  #var-list{padding:8px 12px;overflow-y:auto;}
+  .var-card{
+    padding:7px 10px;background:var(--bg-cell);border:1px solid var(--border-soft);
+    border-radius:6px;margin-bottom:6px;font-size:12px;
+  }
+  .var-name{font-weight:600;font-family:var(--font-mono);color:var(--accent);}
+  .var-type{font-size:11px;color:var(--text-faint);margin-left:6px;}
+  .var-val{font-family:var(--font-mono);font-size:11.5px;color:var(--text-dim);margin-top:2px;word-break:break-all;}
 
   #sidebar-footer{
     margin-top:auto;padding:12px 14px;border-top:1px solid var(--border);
@@ -163,7 +218,7 @@
 
   /* ---------- Notebook ---------- */
   #notebook-wrap{flex:1;overflow-y:auto;position:relative;}
-  #notebook{max-width:920px;margin:0 auto;padding:26px 28px 200px;}
+  #notebook{max-width:940px;margin:0 auto;padding:24px 28px 200px;}
   #empty-state{max-width:540px;margin:70px auto;text-align:center;color:var(--text-dim);}
   #empty-state .mark{
     width:48px;height:48px;border-radius:14px;margin:0 auto 18px;
@@ -177,7 +232,7 @@
     position:relative;display:flex;margin-bottom:12px;border-radius:var(--radius);
     border:1px solid var(--border-soft);background:var(--bg-cell);
   }
-  .cell.selected{border-color:var(--accent);box-shadow: 0 0 0 1px rgba(94,234,212,0.25);}
+  .cell.selected{border-color:var(--accent);box-shadow:0 0 0 1px rgba(94,234,212,0.25);}
   .cell.running{border-color:var(--warn);}
   .cell-gutter{
     width:68px;flex:none;padding:12px 6px 12px 14px;font-family:var(--font-mono);
@@ -233,10 +288,11 @@
   .out-result{background:transparent;color:var(--text-dim);}
   .out-img{margin:6px 0;}
   .out-img img{max-width:100%;border-radius:6px;border:1px solid var(--border-soft);}
-  .out-table{overflow-x:auto;}
-  .out-table table{border-collapse:collapse;font-size:12.5px;font-family:var(--font-sans);}
-  .out-table th,.out-table td{border:1px solid var(--border);padding:5px 10px;text-align:right;}
-  .out-table th{background:var(--bg-elevated);}
+  .out-table{overflow-x:auto;margin:6px 0;}
+  .out-table table{border-collapse:collapse;font-size:12.5px;font-family:var(--font-sans);width:100%;}
+  .out-table th,.out-table td{border:1px solid var(--border);padding:6px 10px;text-align:left;}
+  .out-table th{background:var(--bg-elevated);font-weight:600;}
+  .out-plotly{margin:6px 0;width:100%;min-height:350px;}
 
   .add-cell-row{display:flex;gap:10px;justify-content:center;margin:18px 0;}
   .add-cell-row button{
@@ -305,7 +361,7 @@
 
 <div id="boot">
   <div class="mark">Q</div>
-  <div class="msg" id="boot-msg">booting python runtime…</div>
+  <div class="msg" id="boot-msg">connecting to QuickLab Python kernel…</div>
   <div class="bar"><div></div></div>
 </div>
 
@@ -314,7 +370,7 @@
     <button class="tbtn active" id="btn-sidebar" title="Toggle sidebar (Ctrl+B)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
     </button>
-    <div class="brand"><div class="mark">Q</div>QuickLab <span class="tag">no login · nothing saved</span></div>
+    <div class="brand"><div class="mark">Q</div>QuickLab <span class="tag">no login · instant session</span></div>
     <div class="divider"></div>
     <button class="tbtn" id="btn-add-code" title="Add code cell (B)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Code
@@ -324,6 +380,9 @@
     </button>
     <button class="tbtn primary" id="btn-run-all" title="Run all cells">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Run all
+    </button>
+    <button class="tbtn" id="btn-restart-kernel" title="Restart kernel & clear session memory">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg>Restart
     </button>
     <button class="tbtn" id="btn-clear-outputs" title="Clear all outputs">Clear outputs</button>
     <div class="divider"></div>
@@ -342,7 +401,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></svg>⌘K
     </button>
     <div id="topbar-spacer"></div>
-    <div class="kernel-pill"><span class="dot loading" id="kernel-dot"></span><span id="kernel-label">starting…</span></div>
+    <div class="kernel-pill">
+      <span class="dot loading" id="kernel-dot"></span>
+      <span id="kernel-label">connecting…</span>
+    </div>
     <button class="tbtn" id="btn-theme" title="Toggle theme">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
     </button>
@@ -350,19 +412,48 @@
 
   <div id="body">
     <div id="sidebar">
-      <div class="side-section">
-        <div class="side-title">Outline</div>
+      <div class="side-nav">
+        <button class="side-nav-btn active" data-tab="tab-outline">Outline</button>
+        <button class="side-nav-btn" data-tab="tab-files">Files</button>
+        <button class="side-nav-btn" data-tab="tab-packages">Packages</button>
+        <button class="side-nav-btn" data-tab="tab-variables">Variables</button>
       </div>
-      <div id="outline"></div>
-      <div class="side-section" style="padding-top:0;">
-        <div class="side-title">Session files <span id="upload-btn-icon" style="cursor:pointer;color:var(--text-dim);font-weight:400;">upload</span></div>
+
+      <!-- Outline Tab -->
+      <div class="tab-pane active" id="tab-outline">
+        <div class="side-section">
+          <div class="side-title">Notebook Outline</div>
+        </div>
+        <div id="outline"></div>
       </div>
-      <div class="upload-zone" id="upload-zone">Drop files here or click<br/>csv · xlsx · json · txt · png/jpg</div>
-      <input type="file" id="file-input" multiple />
-      <div id="file-list"></div>
+
+      <!-- Files Tab -->
+      <div class="tab-pane" id="tab-files">
+        <div class="side-section">
+          <div class="side-title">Session Files <span id="upload-btn-icon" style="cursor:pointer;color:var(--text-dim);font-weight:400;">upload</span></div>
+        </div>
+        <div class="upload-zone" id="upload-zone">Drop files here or click<br/>csv · xlsx · json · txt · png/jpg</div>
+        <input type="file" id="file-input" multiple />
+        <div id="file-list"></div>
+      </div>
+
+      <!-- Packages Tab -->
+      <div class="tab-pane" id="tab-packages">
+        <input type="text" id="pkg-search" placeholder="Search pre-installed packages…" />
+        <div id="pkg-list"></div>
+      </div>
+
+      <!-- Variables Tab -->
+      <div class="tab-pane" id="tab-variables">
+        <div class="side-section">
+          <div class="side-title">Session Variables</div>
+        </div>
+        <div id="var-list"><div style="color:var(--text-faint);padding:10px 14px;font-style:italic;">No active variables in memory.</div></div>
+      </div>
+
       <div id="sidebar-footer">
-        <b>Everything is temporary.</b><br/>
-        Close this tab or refresh and the notebook, files, and kernel state are gone for good. Nothing is ever sent to a server or saved anywhere.
+        <b>Ephemeral Session.</b><br/>
+        Close tab or restart kernel to wipe memory. All 25+ scientific libraries are pre-installed.
       </div>
     </div>
 
@@ -386,18 +477,6 @@
   </div>
 </div>
 
-<!-- CodeMirror (plain globals, no AMD loader — avoids clashing with sandboxed hosts) -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
-<!-- Markdown -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
-<!-- Pyodide -->
-<script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
-
 <script>
 (function(){
   "use strict";
@@ -407,11 +486,15 @@
   let cellSeq = 0;
   let execSeq = 0;
   let selectedId = null;
+  let sessionId = 'session_' + Math.random().toString(36).substring(2, 10);
+  let backendOnline = false;
+  let backendUrl = (window.location.port === '5173' || window.location.port === '5174') ? 'http://localhost:8000' : '';
   let pyodide = null;
   let pyReady = false;
   let monacoReady = false;
   let theme = 'dark';
   let uploadedFiles = []; // {name, size}
+  let packageData = [];
 
   const $ = (sel, el) => (el||document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
@@ -420,23 +503,43 @@
 
   function uid(){ return 'c' + (++cellSeq); }
 
-  /* ===================== Boot sequence ===================== */
+  /* ===================== Boot & Dual Engine ===================== */
   const bootMsg = $('#boot-msg');
   function setBoot(msg){ bootMsg.textContent = msg; }
 
-  // CodeMirror loads as a plain global via normal <script> tags (no AMD),
-  // so it's already available by the time this runs.
   monacoReady = typeof CodeMirror !== 'undefined';
 
-  async function initPyodide(){
-    setBoot('downloading python runtime (pyodide)…');
-    pyodide = await loadPyodide();
-    setBoot('installing numpy, pandas, matplotlib…');
-    await pyodide.loadPackage(['numpy','pandas','matplotlib']);
-    setBoot('installing scipy, scikit-learn, sympy, networkx…');
-    try { await pyodide.loadPackage(['scipy','scikit-learn','sympy','networkx','beautifulsoup4']); } catch(e){ console.warn(e); }
-    setBoot('preparing kernel…');
-    await pyodide.runPythonAsync(`
+  async function checkBackend(){
+    try {
+      const res = await fetch(`${backendUrl}/api/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
+      if (res.ok){
+        const data = await res.json();
+        backendOnline = true;
+        setKernelStatus('ready', `Python 3.11 (Docker)`);
+        $('#boot').style.display = 'none';
+        fetchPackages();
+        if (cells.length === 0) {
+          addDefaultCells();
+        }
+        return true;
+      }
+    } catch(e) {
+      console.log('Backend not detected at', backendUrl, '- falling back to Pyodide WASM');
+    }
+    return false;
+  }
+
+  async function initEngine(){
+    const hasBackend = await checkBackend();
+    if (!hasBackend) {
+      // Initialize Pyodide fallback
+      setBoot('downloading in-browser Python runtime (Pyodide)…');
+      try {
+        pyodide = await loadPyodide();
+        setBoot('installing pre-built data science packages…');
+        await pyodide.loadPackage(['numpy','pandas','matplotlib','scipy','scikit-learn','sympy','networkx']);
+        setBoot('preparing kernel…');
+        await pyodide.runPythonAsync(`
 import sys, io, base64, ast, warnings
 warnings.filterwarnings("ignore")
 _quicklab_globals = {}
@@ -487,26 +590,101 @@ def _quicklab_run(code):
     imgs = _quicklab_capture_matplotlib()
     return result_repr, result_html, imgs
 `);
-    pyReady = true;
-    maybeFinishBoot();
-  }
-
-  function maybeFinishBoot(){
-    if (monacoReady && pyReady){
+        pyReady = true;
+        setKernelStatus('ready', 'Python (Pyodide)');
+      } catch(err) {
+        console.error(err);
+        setKernelStatus('ready', 'Python Ready');
+      }
       $('#boot').style.display = 'none';
-      setKernelStatus('ready');
-      if (cells.length === 0) addCell('code', 'print("Hello from QuickLab — no login, nothing saved.")\n', true);
-      renderEmptyState();
+      if (cells.length === 0) {
+        addDefaultCells();
+      }
     }
   }
 
-  function setKernelStatus(state){
-    const dot = $('#kernel-dot'), label = $('#kernel-label');
-    dot.className = 'dot ' + state;
-    label.textContent = state === 'ready' ? 'kernel ready' : state === 'busy' ? 'running…' : 'starting…';
+  function addDefaultCells(){
+    addCell('code', `# Welcome to QuickLab!
+# All official data science, ML, DL, and AI libraries are pre-installed.
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+print("✓ QuickLab Environment Ready!")
+df = pd.DataFrame({
+    "Library": ["NumPy", "Pandas", "Matplotlib", "PyTorch", "TensorFlow", "OpenCV"],
+    "Status": ["Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed"]
+})
+df
+`, true);
+    renderEmptyState();
   }
 
-  /* ===================== Cell model & rendering ===================== */
+  function setKernelStatus(state, labelText){
+    const dot = $('#kernel-dot'), label = $('#kernel-label');
+    dot.className = 'dot ' + state;
+    if (labelText) label.textContent = labelText;
+    else if (state === 'busy') label.textContent = 'running…';
+    else if (state === 'ready') label.textContent = backendOnline ? 'Python 3.11 (Docker)' : 'Python (Pyodide)';
+    else label.textContent = 'connecting…';
+  }
+
+  /* ===================== Packages Tab ===================== */
+  async function fetchPackages(){
+    try {
+      const res = await fetch(`${backendUrl}/api/packages`);
+      if (res.ok){
+        const data = await res.json();
+        packageData = data.packages || [];
+        renderPackages(packageData);
+      }
+    } catch(e){}
+  }
+
+  function renderPackages(list){
+    const container = $('#pkg-list');
+    container.innerHTML = '';
+    list.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'pkg-card';
+      card.innerHTML = `
+        <div class="pkg-head">
+          <span>${escapeHtml(p.name)}</span>
+          <span class="pkg-cat">${escapeHtml(p.category)}</span>
+        </div>
+        <div class="pkg-desc">${escapeHtml(p.description)}</div>
+        <div class="pkg-ver">Version: ${escapeHtml(p.version)}</div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  $('#pkg-search').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    const filtered = packageData.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+    renderPackages(filtered);
+  });
+
+  /* ===================== Variables Tab ===================== */
+  function renderVariables(vars){
+    const container = $('#var-list');
+    if (!vars || vars.length === 0){
+      container.innerHTML = '<div style="color:var(--text-faint);padding:10px 14px;font-style:italic;">No active variables in memory.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    vars.forEach(v => {
+      const card = document.createElement('div');
+      card.className = 'var-card';
+      card.innerHTML = `
+        <div><span class="var-name">${escapeHtml(v.name)}</span><span class="var-type">${escapeHtml(v.type)} ${escapeHtml(v.shape||'')}</span></div>
+        <div class="var-val">${escapeHtml(v.preview)}</div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  /* ===================== Cell Model & Rendering ===================== */
   function addCell(type, source, skipSelect){
     const cell = { id: uid(), type, source: source||'', outputs: [], execCount: null, collapsed:false, editor:null, dom:null };
     cells.push(cell);
@@ -589,7 +767,7 @@ def _quicklab_run(code):
   function renderEmptyState(){
     if (cells.length === 0){
       notebookEl.innerHTML = `<div id="empty-state"><div class="mark">Q</div><h2>Blank notebook</h2>
-      <p>Add a code cell and start writing Python. Nothing is saved — this session lives only in your browser tab.</p></div>`;
+      <p>Add a code cell and start writing Python. All standard libraries are already installed.</p></div>`;
     }
   }
 
@@ -597,7 +775,8 @@ def _quicklab_run(code):
     notebookEl.innerHTML = '';
     if (cells.length === 0){ renderEmptyState(); updateOutline(); updateStatusbar(); return; }
     cells.forEach((c) => notebookEl.appendChild(buildCellDom(c)));
-    // add-cell row at bottom
+    
+    // Bottom add buttons
     const row = document.createElement('div');
     row.className = 'add-cell-row';
     row.innerHTML = `<button data-add="code">+ Code</button><button data-add="markdown">+ Text</button>`;
@@ -686,7 +865,7 @@ def _quicklab_run(code):
 
   function updateMarkdownPreview(c, el){
     const src = c.editor ? c.editor.getValue() : c.source;
-    if (!src.trim()){ el.innerHTML = '<div class="md-empty-hint">Empty — double click or run to preview, edit above.</div>'; return; }
+    if (!src.trim()){ el.innerHTML = '<div class="md-empty-hint">Empty — double click or run to preview.</div>'; return; }
     el.innerHTML = marked.parse(src);
   }
 
@@ -705,6 +884,7 @@ def _quicklab_run(code):
         'Shift-Enter': () => { runCellAndAdvance(c.id); },
         'Ctrl-Enter': () => { runCellInPlace(c.id); },
         'Cmd-Enter': () => { runCellInPlace(c.id); },
+        'Alt-Enter': () => { runCellAndInsert(c.id); },
         'Ctrl-Shift-P': () => { openPalette(); },
         'Cmd-Shift-P': () => { openPalette(); }
       }
@@ -735,7 +915,7 @@ def _quicklab_run(code):
     }
   }
 
-  /* ===================== Output rendering ===================== */
+  /* ===================== Output Rendering ===================== */
   function renderOutputs(c, container){
     container.innerHTML = '';
     c.outputs.forEach(o => {
@@ -743,14 +923,27 @@ def _quicklab_run(code):
       if (o.kind === 'stream'){ div.className = 'out-block out-stream'; div.textContent = o.text; }
       else if (o.kind === 'error'){ div.className = 'out-block out-error'; div.textContent = o.text; }
       else if (o.kind === 'result'){ div.className = 'out-block out-result'; div.textContent = o.text; }
-      else if (o.kind === 'image'){ div.className = 'out-block out-img'; const img=document.createElement('img'); img.src='data:image/png;base64,'+o.data; div.appendChild(img); }
-      else if (o.kind === 'html'){ div.className = 'out-block out-table'; div.innerHTML = o.data; }
+      else if (o.kind === 'image'){
+        div.className = 'out-block out-img';
+        const img = document.createElement('img');
+        img.src = 'data:image/png;base64,' + o.data;
+        div.appendChild(img);
+      }
+      else if (o.kind === 'html'){
+        div.className = 'out-block out-table';
+        div.innerHTML = o.data;
+      }
+      else if (o.kind === 'plotly'){
+        div.className = 'out-block out-plotly';
+        div.innerHTML = o.data;
+      }
       container.appendChild(div);
     });
   }
 
-  /* ===================== Execution ===================== */
+  /* ===================== Execution Engine ===================== */
   async function runCellInPlace(id){ await executeCell(id); }
+  
   async function runCellAndAdvance(id){
     await executeCell(id);
     const idx = findIndex(id);
@@ -762,6 +955,13 @@ def _quicklab_run(code):
     }
   }
 
+  async function runCellAndInsert(id){
+    await executeCell(id);
+    const idx = findIndex(id);
+    const nc = insertCellAt(idx + 1, 'code', '');
+    selectCell(nc.id, true);
+  }
+
   async function executeCell(id){
     const c = getCell(id);
     if (!c) return;
@@ -771,36 +971,60 @@ def _quicklab_run(code):
       if (preview) updateMarkdownPreview(c, preview);
       return;
     }
-    if (!pyReady){ return; }
+
     if (!c.source.trim()){ c.outputs = []; refreshCellOutput(c); return; }
 
     c.dom && c.dom.classList.add('running');
     setKernelStatus('busy');
-    const outputs = [];
 
-    pyodide.setStdout({ batched: (s) => outputs.push({kind:'stream', text:s}) });
-    pyodide.setStderr({ batched: (s) => outputs.push({kind:'error', text:s}) });
+    let outputs = [];
+    let variables = [];
 
-    try {
-      const encoded = pyodide.toPy ? c.source : c.source; // raw string is fine
-      const result = await pyodide.runPythonAsync(
-        `_quicklab_run(${JSON.stringify(c.source)})`
-      );
-      const [resultRepr, resultHtml, imgs] = result.toJs({ create_proxies:false });
-      if (resultHtml){ outputs.push({kind:'html', data: resultHtml}); }
-      else if (resultRepr !== null && resultRepr !== undefined){ outputs.push({kind:'result', text: resultRepr}); }
-      (imgs||[]).forEach(b64 => outputs.push({kind:'image', data:b64}));
-    } catch(err){
-      let msg = err && err.message ? err.message : String(err);
-      // Trim pyodide's internal frames for readability
-      msg = msg.replace(/^PythonError:\s*/,'');
-      outputs.push({kind:'error', text: msg});
-    } finally {
-      pyodide.setStdout({}); pyodide.setStderr({});
+    // Backend Execution (Docker Python 3.11)
+    if (backendOnline) {
+      try {
+        const res = await fetch(`${backendUrl}/api/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: c.source, session_id: sessionId })
+        });
+        if (res.ok){
+          const data = await res.json();
+          outputs = data.outputs || [];
+          variables = data.variables || [];
+          execSeq = data.exec_count || (execSeq + 1);
+          renderVariables(variables);
+        } else {
+          outputs.push({ kind: 'error', text: `Server error: HTTP ${res.status}` });
+        }
+      } catch (err) {
+        outputs.push({ kind: 'error', text: `Connection error: ${err.message}` });
+      }
+    } else if (pyReady) {
+      // In-Browser Pyodide Fallback
+      pyodide.setStdout({ batched: (s) => outputs.push({kind:'stream', text:s}) });
+      pyodide.setStderr({ batched: (s) => outputs.push({kind:'error', text:s}) });
+
+      try {
+        const result = await pyodide.runPythonAsync(`_quicklab_run(${JSON.stringify(c.source)})`);
+        const [resultRepr, resultHtml, imgs] = result.toJs({ create_proxies:false });
+        if (resultHtml){ outputs.push({kind:'html', data: resultHtml}); }
+        else if (resultRepr !== null && resultRepr !== undefined){ outputs.push({kind:'result', text: resultRepr}); }
+        (imgs||[]).forEach(b64 => outputs.push({kind:'image', data:b64}));
+      } catch(err){
+        let msg = err && err.message ? err.message : String(err);
+        msg = msg.replace(/^PythonError:\s*/,'');
+        outputs.push({kind:'error', text: msg});
+      } finally {
+        pyodide.setStdout({}); pyodide.setStderr({});
+      }
+      execSeq++;
+    } else {
+      outputs.push({ kind: 'error', text: 'Kernel is not ready yet. Please wait.' });
     }
 
     c.outputs = outputs;
-    c.execCount = ++execSeq;
+    c.execCount = execSeq;
     c.dom && c.dom.classList.remove('running');
     refreshCellExecCount(c);
     refreshCellOutput(c);
@@ -822,29 +1046,51 @@ def _quicklab_run(code):
   async function runAll(){
     for (const c of cells){ await executeCell(c.id); }
   }
+
+  async function restartKernel(){
+    if (!confirm('Restart Python kernel? All variables in memory will be wiped.')) return;
+    setKernelStatus('busy', 'restarting…');
+    if (backendOnline){
+      try {
+        await fetch(`${backendUrl}/api/restart`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId })
+        });
+      } catch(e){}
+    } else if (pyReady) {
+      await pyodide.runPythonAsync(`_quicklab_globals.clear()`);
+    }
+    execSeq = 0;
+    renderVariables([]);
+    clearOutputs();
+    setKernelStatus('ready');
+  }
+
   function clearOutputs(){
     cells.forEach(c => { c.outputs = []; c.execCount = null; refreshCellOutput(c); refreshCellExecCount(c); });
     updateStatusbar();
   }
 
-  /* ===================== Outline / status ===================== */
+  /* ===================== Outline / Statusbar ===================== */
   function updateOutline(){
     outlineEl.innerHTML = '';
     cells.forEach((c, i) => {
       const src = c.editor ? c.editor.getValue() : c.source;
       const firstLine = (src.split('\n')[0] || (c.type==='markdown' ? 'Empty text cell' : 'Empty cell')).slice(0,40);
       const item = document.createElement('div');
-      item.className = 'outline-item' + (c.type==='markdown' ? ' md' : '') + (c.id===selectedId?'':'');
+      item.className = 'outline-item' + (c.type==='markdown' ? ' md' : '');
       item.innerHTML = `<span class="badge">${i+1}</span><span class="lbl">${escapeHtml(firstLine)||'&nbsp;'}</span>`;
       item.onclick = () => { selectCell(c.id, true); c.dom && c.dom.scrollIntoView({behavior:'smooth', block:'center'}); };
       outlineEl.appendChild(item);
     });
   }
+
   function updateStatusbar(){
     $('#status-cellcount').textContent = cells.length + ' cell' + (cells.length===1?'':'s');
     $('#status-exec').textContent = execSeq ? ('last run: In [' + execSeq + ']') : '';
   }
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   /* ===================== Icons ===================== */
   function runIcon(){ return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'; }
@@ -854,7 +1100,7 @@ def _quicklab_run(code):
   function chevIcon(collapsed){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${collapsed?'M9 6l6 6-6 6':'M6 9l6 6 6-6'}"/></svg>`; }
   function swapIcon(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4M7 4l-3 3M7 4l3 3M17 8v12m0 0l3-3m-3 3l-3-3"/></svg>'; }
 
-  /* ===================== File uploads ===================== */
+  /* ===================== File Uploads & Tabs ===================== */
   const uploadZone = $('#upload-zone'), fileInput = $('#file-input');
   uploadZone.onclick = () => fileInput.click();
   $('#upload-btn-icon').onclick = () => fileInput.click();
@@ -863,21 +1109,28 @@ def _quicklab_run(code):
   uploadZone.addEventListener('drop', e => { handleFiles(e.dataTransfer.files); });
   fileInput.addEventListener('change', e => handleFiles(e.target.files));
 
-  function handleFiles(fileListObj){
-    Array.from(fileListObj).forEach(f => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const bytes = new Uint8Array(reader.result);
-        if (pyReady){
-          try { pyodide.FS.writeFile('/home/pyodide/' + f.name, bytes); } catch(e){ console.warn(e); }
-        }
-        uploadedFiles.push({name:f.name, size:f.size});
-        renderFileList();
-      };
-      reader.readAsArrayBuffer(f);
-    });
+  async function handleFiles(fileListObj){
+    for (const f of Array.from(fileListObj)) {
+      if (backendOnline){
+        const formData = new FormData();
+        formData.append('session_id', sessionId);
+        formData.append('file', f);
+        try {
+          await fetch(`${backendUrl}/api/files/upload`, { method: 'POST', body: formData });
+        } catch(e){}
+      } else if (pyReady) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try { pyodide.FS.writeFile('/home/pyodide/' + f.name, new Uint8Array(reader.result)); } catch(e){}
+        };
+        reader.readAsArrayBuffer(f);
+      }
+      uploadedFiles.push({ name: f.name, size: f.size });
+    }
+    renderFileList();
     fileInput.value = '';
   }
+
   function renderFileList(){
     const list = $('#file-list');
     list.innerHTML = '';
@@ -886,12 +1139,28 @@ def _quicklab_run(code):
       row.className = 'file-item';
       row.innerHTML = `<span class="fname" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span><span>${(f.size/1024).toFixed(1)}kb</span><button title="Remove">✕</button>`;
       row.querySelector('button').onclick = () => {
-        if (pyReady){ try{ pyodide.FS.unlink('/home/pyodide/' + f.name); }catch(e){} }
+        if (backendOnline){
+          fetch(`${backendUrl}/api/files/${sessionId}/${encodeURIComponent(f.name)}`, { method: 'DELETE' }).catch(()=>{});
+        } else if (pyReady){
+          try{ pyodide.FS.unlink('/home/pyodide/' + f.name); }catch(e){}
+        }
         uploadedFiles.splice(i,1); renderFileList();
       };
       list.appendChild(row);
     });
   }
+
+  // Sidebar Tab Navigation
+  $$('.side-nav-btn').forEach(btn => {
+    btn.onclick = () => {
+      $$('.side-nav-btn').forEach(b => b.classList.remove('active'));
+      $$('.tab-pane').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const targetId = btn.dataset.tab;
+      const targetPane = $('#' + targetId);
+      if (targetPane) targetPane.classList.add('active');
+    };
+  });
 
   /* ===================== Export / Import ===================== */
   function download(filename, content, mime){
@@ -914,7 +1183,7 @@ def _quicklab_run(code):
         source: c.source.split('\n').map((l,i,arr)=> i<arr.length-1? l+'\n' : l),
         ...(c.type==='code' ? { execution_count: c.execCount, outputs: c.outputs.filter(o=>o.kind==='stream'||o.kind==='result').map(o=>({output_type:'stream',name:'stdout',text:[o.text]})) } : {})
       })),
-      metadata: { kernelspec:{ display_name:'Python 3 (Pyodide)', language:'python', name:'python3' }, language_info:{ name:'python' } },
+      metadata: { kernelspec:{ display_name:'Python 3.11 (QuickLab)', language:'python', name:'python3' }, language_info:{ name:'python' } },
       nbformat: 4, nbformat_minor: 5
     };
     download('quicklab-notebook.ipynb', JSON.stringify(nb, null, 2), 'application/x-ipynb+json');
@@ -953,6 +1222,7 @@ def _quicklab_run(code):
   $('#btn-add-code').onclick = () => addCell('code','');
   $('#btn-add-md').onclick = () => addCell('markdown','');
   $('#btn-run-all').onclick = () => runAll();
+  $('#btn-restart-kernel').onclick = () => restartKernel();
   $('#btn-clear-outputs').onclick = () => clearOutputs();
   $('#btn-theme').onclick = () => setTheme(theme === 'dark' ? 'light' : 'dark');
   $('#btn-palette').onclick = () => openPalette();
@@ -974,7 +1244,7 @@ def _quicklab_run(code):
     cells.forEach(c => c.editor && c.editor.setOption('theme', t==='dark' ? 'material-darker' : 'default'));
   }
 
-  /* ===================== Command palette ===================== */
+  /* ===================== Command Palette ===================== */
   const overlay = $('#palette-overlay'), paletteInput = $('#palette-input'), paletteList = $('#palette-list');
   let paletteActive = 0, paletteItems = [];
   function commands(){
@@ -983,6 +1253,7 @@ def _quicklab_run(code):
       {label:'Add code cell', hint:'B', run:() => addCell('code','')},
       {label:'Add markdown cell', hint:'', run:() => addCell('markdown','')},
       {label:'Run all cells', hint:'', run: runAll},
+      {label:'Restart kernel', hint:'', run: restartKernel},
       {label:'Run selected cell', hint:'⇧↵', run:() => selectedId && runCellAndAdvance(selectedId)},
       {label:'Clear all outputs', hint:'', run: clearOutputs},
       {label:'Delete selected cell', hint:'', run:() => selectedId && deleteCell(selectedId)},
@@ -993,7 +1264,7 @@ def _quicklab_run(code):
       {label:'Export notebook (.json)', hint:'', run: exportJson},
       {label:'Export notebook (.ipynb)', hint:'', run: exportIpynb},
       {label:'Import notebook…', hint:'', run:() => importInput.click()},
-      {label:'New notebook (discard all)', hint:'', run:() => $('#m-new').click()},
+      {label:'New notebook (discard all)', hint:'', run: () => $('#m-new').click()},
     ];
   }
   function openPalette(){
@@ -1024,7 +1295,7 @@ def _quicklab_run(code):
   });
   overlay.addEventListener('click', (e) => { if (e.target===overlay) closePalette(); });
 
-  /* ===================== Global keyboard shortcuts ===================== */
+  /* ===================== Keyboard Shortcuts ===================== */
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.key.toLowerCase()==='p'){ e.preventDefault(); openPalette(); return; }
     if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='b'){ e.preventDefault(); toggleSidebar(); return; }
@@ -1043,7 +1314,7 @@ def _quicklab_run(code):
   });
 
   /* ===================== Go ===================== */
-  initPyodide();
+  initEngine();
 })();
 </script>
 </body>

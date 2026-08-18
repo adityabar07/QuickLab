@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # QuickLab Python 3.11 Execution Engine
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: quicklab-execution-engine:latest
+    container_name: quicklab-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - PORT=8000
+      - QUICKLAB_ENV=production
+      - SESSION_TIMEOUT_SECONDS=1800
+      - MAX_EXECUTION_TIME_SECONDS=60
+      - MAX_MEMORY_MB=2048
+      - CORS_ORIGINS=*
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4096M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    tmpfs:
+      - /sandbox:rw,size=512M,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - quicklab-net
+
+  # QuickLab Web Interface (Vite / React)
+  frontend:
+    image: node:20-alpine
+    container_name: quicklab-frontend
+    working_dir: /app
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    environment:
+      - VITE_BACKEND_URL=http://localhost:8000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - quicklab-net
+
+networks:
+  quicklab-net:
+    driver: bridge
