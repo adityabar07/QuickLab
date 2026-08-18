@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
 <!-- CodeMirror -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
@@ -14,12 +15,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+
 <!-- Marked (Markdown) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
-<!-- Plotly.js -->
+
+<!-- Plotly.js for interactive charts -->
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-<!-- Pyodide Fallback -->
-<script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
 
 <style>
   :root{
@@ -111,6 +112,7 @@
   .dot{width:7.5px;height:7.5px;border-radius:50%;background:var(--text-faint);flex:none;}
   .dot.ready{background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);}
   .dot.busy{background:var(--warn);animation:pulse 1s infinite;}
+  .dot.offline{background:var(--error);box-shadow:0 0 0 3px rgba(248,113,113,0.2);}
   .dot.loading{background:var(--text-faint);animation:pulse 1s infinite;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 
@@ -361,7 +363,7 @@
 
 <div id="boot">
   <div class="mark">Q</div>
-  <div class="msg" id="boot-msg">connecting to QuickLab Python kernel…</div>
+  <div class="msg" id="boot-msg">connecting to QuickLab Python backend…</div>
   <div class="bar"><div></div></div>
 </div>
 
@@ -370,7 +372,7 @@
     <button class="tbtn active" id="btn-sidebar" title="Toggle sidebar (Ctrl+B)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
     </button>
-    <div class="brand"><div class="mark">Q</div>QuickLab <span class="tag">no login · instant session</span></div>
+    <div class="brand"><div class="mark">Q</div>QuickLab <span class="tag">no login · pre-installed libraries</span></div>
     <div class="divider"></div>
     <button class="tbtn" id="btn-add-code" title="Add code cell (B)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Code
@@ -403,7 +405,7 @@
     <div id="topbar-spacer"></div>
     <div class="kernel-pill">
       <span class="dot loading" id="kernel-dot"></span>
-      <span id="kernel-label">connecting…</span>
+      <span id="kernel-label">checking backend…</span>
     </div>
     <button class="tbtn" id="btn-theme" title="Toggle theme">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -452,8 +454,8 @@
       </div>
 
       <div id="sidebar-footer">
-        <b>Ephemeral Session.</b><br/>
-        Close tab or restart kernel to wipe memory. All 25+ scientific libraries are pre-installed.
+        <b>QuickLab Python 3.11 Backend.</b><br/>
+        All 25+ libraries (Seaborn, Plotly, PyTorch, TensorFlow, OpenCV, pgmpy, etc.) are pre-installed.
       </div>
     </div>
 
@@ -488,9 +490,6 @@
   let selectedId = null;
   let sessionId = 'session_' + Math.random().toString(36).substring(2, 10);
   let backendOnline = false;
-  let backendUrl = (window.location.port === '5173' || window.location.port === '5174') ? 'http://localhost:8000' : '';
-  let pyodide = null;
-  let pyReady = false;
   let monacoReady = false;
   let theme = 'dark';
   let uploadedFiles = []; // {name, size}
@@ -503,19 +502,16 @@
 
   function uid(){ return 'c' + (++cellSeq); }
 
-  /* ===================== Boot & Dual Engine ===================== */
-  const bootMsg = $('#boot-msg');
-  function setBoot(msg){ bootMsg.textContent = msg; }
-
+  /* ===================== Backend Connection ===================== */
   monacoReady = typeof CodeMirror !== 'undefined';
 
-  async function checkBackend(){
+  async function checkBackendConnection(){
     try {
-      const res = await fetch(`${backendUrl}/api/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
+      const res = await fetch('/api/health', { method: 'GET', signal: AbortSignal.timeout(3000) });
       if (res.ok){
         const data = await res.json();
         backendOnline = true;
-        setKernelStatus('ready', `Python 3.11 (Docker)`);
+        setKernelStatus('ready', `Python 3.11 — Docker`);
         $('#boot').style.display = 'none';
         fetchPackages();
         if (cells.length === 0) {
@@ -524,96 +520,39 @@
         return true;
       }
     } catch(e) {
-      console.log('Backend not detected at', backendUrl, '- falling back to Pyodide WASM');
+      console.warn('Backend connection failed:', e);
+    }
+    backendOnline = false;
+    setKernelStatus('offline', 'Python Execution Backend Offline');
+    $('#boot').style.display = 'none';
+    if (cells.length === 0) {
+      addDefaultCells();
     }
     return false;
   }
 
-  async function initEngine(){
-    const hasBackend = await checkBackend();
-    if (!hasBackend) {
-      // Initialize Pyodide fallback
-      setBoot('downloading in-browser Python runtime (Pyodide)…');
-      try {
-        pyodide = await loadPyodide();
-        setBoot('installing pre-built data science packages…');
-        await pyodide.loadPackage(['numpy','pandas','matplotlib','scipy','scikit-learn','sympy','networkx']);
-        setBoot('preparing kernel…');
-        await pyodide.runPythonAsync(`
-import sys, io, base64, ast, warnings
-warnings.filterwarnings("ignore")
-_quicklab_globals = {}
-
-def _quicklab_capture_matplotlib():
-    imgs = []
-    try:
-        import matplotlib
-        matplotlib.use("AGG")
-        import matplotlib.pyplot as plt
-        for n in plt.get_fignums():
-            fig = plt.figure(n)
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
-            buf.seek(0)
-            imgs.append(base64.b64encode(buf.read()).decode("utf-8"))
-        plt.close("all")
-    except Exception:
-        pass
-    return imgs
-
-def _quicklab_run(code):
-    result_repr = None
-    result_html = None
-    tree = ast.parse(code, mode="exec")
-    if tree.body and isinstance(tree.body[-1], ast.Expr):
-        last = tree.body.pop()
-        if tree.body:
-            exec(compile(tree, "<cell>", "exec"), _quicklab_globals)
-        val = eval(compile(ast.Expression(last.value), "<cell>", "eval"), _quicklab_globals)
-        if val is not None:
-            _quicklab_globals["_"] = val
-            modname = type(val).__module__
-            clsname = type(val).__name__
-            full = modname + "." + clsname
-            if full in ("pandas.core.frame.DataFrame","pandas.core.series.Series"):
-                try:
-                    result_html = val.to_html(max_rows=100)
-                except Exception:
-                    result_repr = repr(val)
-            else:
-                try:
-                    result_repr = repr(val)
-                except Exception:
-                    result_repr = "<unrepresentable object>"
-    else:
-        exec(compile(tree, "<cell>", "exec"), _quicklab_globals)
-    imgs = _quicklab_capture_matplotlib()
-    return result_repr, result_html, imgs
-`);
-        pyReady = true;
-        setKernelStatus('ready', 'Python (Pyodide)');
-      } catch(err) {
-        console.error(err);
-        setKernelStatus('ready', 'Python Ready');
-      }
-      $('#boot').style.display = 'none';
-      if (cells.length === 0) {
-        addDefaultCells();
-      }
+  // Periodic heartbeat to reconnect automatically
+  setInterval(async () => {
+    if (!backendOnline) {
+      await checkBackendConnection();
     }
-  }
+  }, 4000);
 
   function addDefaultCells(){
     addCell('code', `# Welcome to QuickLab!
 # All official data science, ML, DL, and AI libraries are pre-installed.
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
+import plotly.express as px
+import torch
+import cv2
 
-print("✓ QuickLab Environment Ready!")
+print("✓ QuickLab Python 3.11 Backend Environment Ready!")
 df = pd.DataFrame({
-    "Library": ["NumPy", "Pandas", "Matplotlib", "PyTorch", "TensorFlow", "OpenCV"],
-    "Status": ["Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed"]
+    "Library": ["NumPy", "Pandas", "Seaborn", "Plotly", "PyTorch", "TensorFlow", "OpenCV", "pgmpy"],
+    "Status": ["Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed"]
 })
 df
 `, true);
@@ -625,14 +564,15 @@ df
     dot.className = 'dot ' + state;
     if (labelText) label.textContent = labelText;
     else if (state === 'busy') label.textContent = 'running…';
-    else if (state === 'ready') label.textContent = backendOnline ? 'Python 3.11 (Docker)' : 'Python (Pyodide)';
+    else if (state === 'ready') label.textContent = 'Python 3.11 — Docker';
+    else if (state === 'offline') label.textContent = 'Python Backend Offline';
     else label.textContent = 'connecting…';
   }
 
   /* ===================== Packages Tab ===================== */
   async function fetchPackages(){
     try {
-      const res = await fetch(`${backendUrl}/api/packages`);
+      const res = await fetch('/api/packages');
       if (res.ok){
         const data = await res.json();
         packageData = data.packages || [];
@@ -936,6 +876,13 @@ df
       else if (o.kind === 'plotly'){
         div.className = 'out-block out-plotly';
         div.innerHTML = o.data;
+        // Trigger Plotly responsive resize / scripts
+        const scripts = div.querySelectorAll('script');
+        scripts.forEach(s => {
+          const newS = document.createElement('script');
+          newS.textContent = s.textContent;
+          document.body.appendChild(newS);
+        });
       }
       container.appendChild(div);
     });
@@ -980,47 +927,45 @@ df
     let outputs = [];
     let variables = [];
 
-    // Backend Execution (Docker Python 3.11)
-    if (backendOnline) {
-      try {
-        const res = await fetch(`${backendUrl}/api/execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: c.source, session_id: sessionId })
+    // Backend Execution (Docker / FastAPI Python 3.11)
+    if (!backendOnline) {
+      // Check connection one more time
+      const isUp = await checkBackendConnection();
+      if (!isUp) {
+        outputs.push({
+          kind: 'error',
+          text: 'Python Execution Backend Offline.\n\nStart the QuickLab backend / Docker environment (port 8000) to execute Python code with Seaborn, Plotly, PyTorch, TensorFlow, OpenCV, pgmpy, etc.'
         });
-        if (res.ok){
-          const data = await res.json();
-          outputs = data.outputs || [];
-          variables = data.variables || [];
-          execSeq = data.exec_count || (execSeq + 1);
-          renderVariables(variables);
-        } else {
-          outputs.push({ kind: 'error', text: `Server error: HTTP ${res.status}` });
-        }
-      } catch (err) {
-        outputs.push({ kind: 'error', text: `Connection error: ${err.message}` });
+        c.outputs = outputs;
+        c.dom && c.dom.classList.remove('running');
+        refreshCellOutput(c);
+        setKernelStatus('offline', 'Python Backend Offline');
+        return;
       }
-    } else if (pyReady) {
-      // In-Browser Pyodide Fallback
-      pyodide.setStdout({ batched: (s) => outputs.push({kind:'stream', text:s}) });
-      pyodide.setStderr({ batched: (s) => outputs.push({kind:'error', text:s}) });
+    }
 
-      try {
-        const result = await pyodide.runPythonAsync(`_quicklab_run(${JSON.stringify(c.source)})`);
-        const [resultRepr, resultHtml, imgs] = result.toJs({ create_proxies:false });
-        if (resultHtml){ outputs.push({kind:'html', data: resultHtml}); }
-        else if (resultRepr !== null && resultRepr !== undefined){ outputs.push({kind:'result', text: resultRepr}); }
-        (imgs||[]).forEach(b64 => outputs.push({kind:'image', data:b64}));
-      } catch(err){
-        let msg = err && err.message ? err.message : String(err);
-        msg = msg.replace(/^PythonError:\s*/,'');
-        outputs.push({kind:'error', text: msg});
-      } finally {
-        pyodide.setStdout({}); pyodide.setStderr({});
+    try {
+      const res = await fetch('/api/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: c.source, session_id: sessionId })
+      });
+      if (res.ok){
+        const data = await res.json();
+        outputs = data.outputs || [];
+        variables = data.variables || [];
+        execSeq = data.exec_count || (execSeq + 1);
+        renderVariables(variables);
+      } else {
+        outputs.push({ kind: 'error', text: `Server error: HTTP ${res.status} ${res.statusText}` });
       }
-      execSeq++;
-    } else {
-      outputs.push({ kind: 'error', text: 'Kernel is not ready yet. Please wait.' });
+    } catch (err) {
+      backendOnline = false;
+      setKernelStatus('offline', 'Python Backend Offline');
+      outputs.push({
+        kind: 'error',
+        text: `Connection error: Unable to reach QuickLab Python Backend at /api/execute.\n${err.message}\n\nPlease ensure the backend server is running on port 8000.`
+      });
     }
 
     c.outputs = outputs;
@@ -1028,7 +973,7 @@ df
     c.dom && c.dom.classList.remove('running');
     refreshCellExecCount(c);
     refreshCellOutput(c);
-    setKernelStatus('ready');
+    setKernelStatus(backendOnline ? 'ready' : 'offline');
     updateStatusbar();
   }
 
@@ -1052,19 +997,17 @@ df
     setKernelStatus('busy', 'restarting…');
     if (backendOnline){
       try {
-        await fetch(`${backendUrl}/api/restart`, {
+        await fetch('/api/restart', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: sessionId })
         });
       } catch(e){}
-    } else if (pyReady) {
-      await pyodide.runPythonAsync(`_quicklab_globals.clear()`);
     }
     execSeq = 0;
     renderVariables([]);
     clearOutputs();
-    setKernelStatus('ready');
+    setKernelStatus(backendOnline ? 'ready' : 'offline');
   }
 
   function clearOutputs(){
@@ -1079,7 +1022,7 @@ df
       const src = c.editor ? c.editor.getValue() : c.source;
       const firstLine = (src.split('\n')[0] || (c.type==='markdown' ? 'Empty text cell' : 'Empty cell')).slice(0,40);
       const item = document.createElement('div');
-      item.className = 'outline-item' + (c.type==='markdown' ? ' md' : '');
+      item.className = 'outline-item' + (c.type==='markdown' ? ' md' : '') + (c.id===selectedId?'':'');
       item.innerHTML = `<span class="badge">${i+1}</span><span class="lbl">${escapeHtml(firstLine)||'&nbsp;'}</span>`;
       item.onclick = () => { selectCell(c.id, true); c.dom && c.dom.scrollIntoView({behavior:'smooth', block:'center'}); };
       outlineEl.appendChild(item);
@@ -1116,14 +1059,8 @@ df
         formData.append('session_id', sessionId);
         formData.append('file', f);
         try {
-          await fetch(`${backendUrl}/api/files/upload`, { method: 'POST', body: formData });
+          await fetch('/api/files/upload', { method: 'POST', body: formData });
         } catch(e){}
-      } else if (pyReady) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          try { pyodide.FS.writeFile('/home/pyodide/' + f.name, new Uint8Array(reader.result)); } catch(e){}
-        };
-        reader.readAsArrayBuffer(f);
       }
       uploadedFiles.push({ name: f.name, size: f.size });
     }
@@ -1140,9 +1077,7 @@ df
       row.innerHTML = `<span class="fname" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span><span>${(f.size/1024).toFixed(1)}kb</span><button title="Remove">✕</button>`;
       row.querySelector('button').onclick = () => {
         if (backendOnline){
-          fetch(`${backendUrl}/api/files/${sessionId}/${encodeURIComponent(f.name)}`, { method: 'DELETE' }).catch(()=>{});
-        } else if (pyReady){
-          try{ pyodide.FS.unlink('/home/pyodide/' + f.name); }catch(e){}
+          fetch(`/api/files/${sessionId}/${encodeURIComponent(f.name)}`, { method: 'DELETE' }).catch(()=>{});
         }
         uploadedFiles.splice(i,1); renderFileList();
       };
@@ -1313,8 +1248,8 @@ df
     e.preventDefault(); e.returnValue = '';
   });
 
-  /* ===================== Go ===================== */
-  initEngine();
+  /* ===================== Start ===================== */
+  checkBackendConnection();
 })();
 </script>
 </body>

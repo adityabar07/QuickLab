@@ -68,7 +68,7 @@ def capture_matplotlib_figures() -> List[str]:
             b64 = base64.b64encode(buf.read()).decode("utf-8")
             imgs.append(b64)
         plt.close("all")
-    except Exception as e:
+    except Exception:
         pass
     return imgs
 
@@ -80,7 +80,6 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
 
     modname = getattr(type(val), "__module__", "")
     clsname = getattr(type(val), "__name__", "")
-    full_type = f"{modname}.{clsname}"
 
     # 1. Pandas DataFrame / Series
     if "pandas" in modname and ("DataFrame" in clsname or "Series" in clsname):
@@ -105,7 +104,6 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
     if "plotly" in modname and ("Figure" in clsname):
         try:
             import plotly.io as pio
-            # Export as responsive interactive HTML div
             html_div = pio.to_html(val, full_html=False, include_plotlyjs=False)
             out_cap.add_plotly(html_div)
             return
@@ -129,7 +127,6 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
             try:
                 from PIL import Image
                 import numpy as np
-                norm_arr = val
                 if val.dtype.kind == 'f':
                     norm_arr = (np.clip(val, 0, 1) * 255).astype(np.uint8)
                 else:
@@ -205,12 +202,10 @@ def inspect_variables(namespace: Dict[str, Any]) -> List[Dict[str, Any]]:
             if mod and mod != "builtins":
                 type_name = f"{mod.split('.')[0]}.{type_name}"
 
-            # Summary representation
             val_repr = str(val)
             if len(val_repr) > 80:
                 val_repr = val_repr[:77] + "..."
 
-            # Array / DF shape if applicable
             shape_info = ""
             if hasattr(val, "shape"):
                 shape_info = str(val.shape)
@@ -276,6 +271,19 @@ def run_code_in_session(
     except Exception:
         pass
 
+    # Hook Plotly fig.show() to add output directly into out_cap
+    try:
+        import plotly.graph_objects as go
+        import plotly.io as pio
+
+        def custom_plotly_show(self, *args, **kwargs):
+            html_div = pio.to_html(self, full_html=False, include_plotlyjs=False)
+            out_cap.add_plotly(html_div)
+
+        go.Figure.show = custom_plotly_show
+    except Exception:
+        pass
+
     try:
         tree = ast.parse(py_code, mode="exec")
         if tree.body and isinstance(tree.body[-1], ast.Expr):
@@ -292,10 +300,8 @@ def run_code_in_session(
             exec_code = compile(tree, filename="<quicklab-cell>", mode="exec")
             exec(exec_code, globals_dict)
 
-    except Exception as exc:
-        # Format traceback cleanly
+    except Exception:
         tb_lines = traceback.format_exception(*sys.exc_info())
-        # Filter internal frames
         filtered = [l for l in tb_lines if "server/execution.py" not in l]
         err_msg = "".join(filtered).strip()
         out_cap.add_error(err_msg)
@@ -308,14 +314,20 @@ def run_code_in_session(
         except Exception:
             pass
 
-    # Append captured stdout and stderr
+    # Append captured stdout and stderr (suppress non-interactive Matplotlib show warning)
     stdout_content = captured_stdout.getvalue()
     if stdout_content:
         out_cap.add_stream(stdout_content, "stdout")
 
     stderr_content = captured_stderr.getvalue()
     if stderr_content:
-        out_cap.add_error(stderr_content)
+        # Ignore headless Agg warning
+        filtered_err = "\n".join([
+            l for l in stderr_content.split("\n")
+            if "FigureCanvasAgg is non-interactive" not in l
+        ]).strip()
+        if filtered_err:
+            out_cap.add_error(filtered_err)
 
     # Capture any newly generated Matplotlib / Seaborn figures
     mpl_imgs = capture_matplotlib_figures()

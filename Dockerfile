@@ -33,6 +33,9 @@ RUN groupadd -g 1000 quicklab && \
 
 WORKDIR /app
 
+# Upgrade pip and install wheel tooling
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Copy requirements and install CPU PyTorch & all dependencies
 COPY requirements.txt /app/requirements.txt
 
@@ -50,6 +53,29 @@ RUN mkdir -p /app/sessions /sandbox && \
 # Copy server codebase and verification scripts
 COPY --chown=quicklab:quicklab server /app/server
 COPY --chown=quicklab:quicklab scripts /app/scripts
+
+# Verify all official libraries during build time (fails build if any library is broken)
+RUN python -c "\
+import numpy; \
+import pandas; \
+import scipy; \
+import sympy; \
+import matplotlib; \
+import seaborn; \
+import plotly; \
+import sklearn; \
+import tensorflow; \
+import keras; \
+import torch; \
+import cv2; \
+import nltk; \
+import spacy; \
+import transformers; \
+import pgmpy; \
+import networkx; \
+import statsmodels; \
+print('QUICKLAB LIBRARIES VERIFIED SUCCESSFULLY')\
+"
 
 # Switch to non-root user
 USER quicklab
