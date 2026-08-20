@@ -1,6 +1,6 @@
 """
 QuickLab — Session Manager
-Manages isolated in-memory Python session states and ephemeral sandbox storage.
+Manages isolated in-memory Python session states, scratchpad workspaces, and lifecycle cleanup.
 """
 
 import os
@@ -9,6 +9,7 @@ import time
 import uuid
 import threading
 from typing import Dict, Any, List, Optional, Tuple
+from server.config import settings
 from server.execution import run_code_in_session
 
 
@@ -19,19 +20,18 @@ class Session:
         self.last_active = time.time()
         self.execution_count = 0
         self.lock = threading.Lock()
-        self.sandbox_dir = os.path.join(base_sandbox_dir, session_id)
+        self.sandbox_dir = os.path.abspath(os.path.join(base_sandbox_dir, session_id))
         os.makedirs(self.sandbox_dir, exist_ok=True)
         self.globals_dict: Dict[str, Any] = self._create_clean_globals()
 
     def _create_clean_globals(self) -> Dict[str, Any]:
         """Creates a clean global execution namespace for the session."""
-        g = {
+        return {
             "__name__": "__main__",
             "__doc__": None,
             "__package__": None,
             "_": None
         }
-        return g
 
     def reset(self):
         """Restarts the session kernel, wiping all variables and recreating clean namespace."""
@@ -40,14 +40,21 @@ class Session:
             self.execution_count = 0
             self.last_active = time.time()
 
-    def execute(self, code: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], int]:
+    def execute(
+        self,
+        code: str,
+        timeout_seconds: Optional[int] = None,
+        stream_callback=None
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], int]:
         with self.lock:
             self.last_active = time.time()
             self.execution_count += 1
             outputs, variables = run_code_in_session(
                 code=code,
                 globals_dict=self.globals_dict,
-                session_cwd=self.sandbox_dir
+                session_cwd=self.sandbox_dir,
+                timeout_seconds=timeout_seconds or settings.EXECUTION_TIMEOUT_SECONDS,
+                stream_callback=stream_callback
             )
             return outputs, variables, self.execution_count
 
@@ -62,13 +69,17 @@ class Session:
 
 class SessionManager:
     def __init__(self, base_sandbox_dir: Optional[str] = None):
-        self.base_sandbox_dir = base_sandbox_dir or os.path.abspath("./sessions")
+        self.base_sandbox_dir = base_sandbox_dir or str(settings.SANDBOX_DIR)
         os.makedirs(self.base_sandbox_dir, exist_ok=True)
         self.sessions: Dict[str, Session] = {}
         self.lock = threading.Lock()
 
     def get_or_create(self, session_id: Optional[str] = None) -> Session:
         with self.lock:
+            # Enforce max sessions threshold by cleaning old idle ones
+            if len(self.sessions) >= settings.MAX_ACTIVE_SESSIONS:
+                self._purge_oldest_idle()
+
             if not session_id or session_id not in self.sessions:
                 sid = session_id or str(uuid.uuid4())
                 session = Session(sid, self.base_sandbox_dir)
@@ -108,7 +119,10 @@ class SessionManager:
     def save_file(self, session_id: str, filename: str, content: bytes) -> str:
         session = self.get_or_create(session_id)
         safe_name = os.path.basename(filename)
-        dest_path = os.path.join(session.sandbox_dir, safe_name)
+        dest_path = os.path.abspath(os.path.join(session.sandbox_dir, safe_name))
+        # Ensure path traversal defense
+        if not dest_path.startswith(session.sandbox_dir):
+            raise ValueError("Invalid file destination path.")
         with open(dest_path, "wb") as f:
             f.write(content)
         return dest_path
@@ -118,8 +132,8 @@ class SessionManager:
         if not session:
             return False
         safe_name = os.path.basename(filename)
-        fpath = os.path.join(session.sandbox_dir, safe_name)
-        if os.path.exists(fpath):
+        fpath = os.path.abspath(os.path.join(session.sandbox_dir, safe_name))
+        if fpath.startswith(session.sandbox_dir) and os.path.exists(fpath):
             try:
                 os.remove(fpath)
                 return True
@@ -127,13 +141,23 @@ class SessionManager:
                 pass
         return False
 
-    def clean_inactive_sessions(self, max_idle_seconds: int = 1800):
+    def _purge_oldest_idle(self):
+        """Internal helper to drop the oldest session when capacity is reached."""
+        if not self.sessions:
+            return
+        oldest_sid = min(self.sessions.keys(), key=lambda k: self.sessions[k].last_active)
+        s = self.sessions.pop(oldest_sid, None)
+        if s:
+            s.cleanup()
+
+    def clean_inactive_sessions(self, max_idle_seconds: Optional[int] = None):
         """Cleans up sessions that have been idle for longer than max_idle_seconds."""
+        idle_limit = max_idle_seconds or settings.SESSION_IDLE_TIMEOUT_SECONDS
         now = time.time()
         with self.lock:
             to_delete = [
                 sid for sid, s in self.sessions.items()
-                if now - s.last_active > max_idle_seconds
+                if now - s.last_active > idle_limit
             ]
             for sid in to_delete:
                 s = self.sessions.pop(sid, None)

@@ -1,7 +1,7 @@
 """
-QuickLab V1 — Python Code Execution Engine
-Provides safe, isolated session execution with rich representation capturing
-(Matplotlib / Seaborn figures, Pandas DataFrames, SymPy expressions, Streams, and Variables).
+QuickLab — Python Code Execution Engine
+Provides safe session execution with timeout enforcement, resource limits,
+rich representation capturing (Matplotlib / Seaborn, Pandas, SymPy), and real-time streaming.
 """
 
 import sys
@@ -12,7 +12,10 @@ import base64
 import traceback
 import subprocess
 import threading
-from typing import Dict, Any, List, Tuple, Optional
+import concurrent.futures
+from typing import Dict, Any, List, Tuple, Optional, Callable
+
+from server.config import settings
 
 # Pre-set headless Matplotlib backend
 os.environ["MPLBACKEND"] = "Agg"
@@ -25,28 +28,48 @@ except ImportError:
 
 
 class OutputCapture:
-    def __init__(self):
+    def __init__(self, max_bytes: int = 5 * 1024 * 1024, stream_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
         self.outputs: List[Dict[str, Any]] = []
+        self.max_bytes = max_bytes
+        self.current_bytes = 0
+        self.stream_callback = stream_callback
+
+    def _append(self, item: Dict[str, Any]):
+        approx_size = len(str(item.get("data") or item.get("text") or ""))
+        if self.current_bytes + approx_size > self.max_bytes:
+            if not any(o.get("text") == "\n[Output truncated: Exceeded maximum buffer limit]\n" for o in self.outputs):
+                truncated_msg = {"kind": "stream", "name": "stderr", "text": "\n[Output truncated: Exceeded maximum buffer limit]\n"}
+                self.outputs.append(truncated_msg)
+                if self.stream_callback:
+                    self.stream_callback(truncated_msg)
+            return
+        self.current_bytes += approx_size
+        self.outputs.append(item)
+        if self.stream_callback:
+            try:
+                self.stream_callback(item)
+            except Exception:
+                pass
 
     def add_stream(self, text: str, name: str = "stdout"):
         if text:
-            self.outputs.append({"kind": "stream", "name": name, "text": text})
+            self._append({"kind": "stream", "name": name, "text": text})
 
     def add_error(self, text: str):
         if text:
-            self.outputs.append({"kind": "error", "text": text})
+            self._append({"kind": "error", "text": text})
 
     def add_result(self, text: str):
         if text is not None:
-            self.outputs.append({"kind": "result", "text": str(text)})
+            self._append({"kind": "result", "text": str(text)})
 
     def add_html(self, html_content: str):
         if html_content:
-            self.outputs.append({"kind": "html", "data": html_content})
+            self._append({"kind": "html", "data": html_content})
 
     def add_image(self, b64_png: str):
         if b64_png:
-            self.outputs.append({"kind": "image", "data": b64_png})
+            self._append({"kind": "image", "data": b64_png})
 
 
 def capture_matplotlib_figures() -> List[str]:
@@ -114,7 +137,7 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
 
 
 def execute_shell_magic(command: str, cwd: str) -> Tuple[str, str, int]:
-    """Executes a shell command (e.g. !pip install or !ls) inside the temporary sandbox."""
+    """Executes a shell command (e.g. !ls or !pip) inside the temporary sandbox."""
     try:
         proc = subprocess.run(
             command,
@@ -122,11 +145,11 @@ def execute_shell_magic(command: str, cwd: str) -> Tuple[str, str, int]:
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=30
         )
         return proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired:
-        return "", "Command timed out after 60 seconds.", 1
+        return "", "Command timed out after 30 seconds.", 1
     except Exception as e:
         return "", f"Shell command execution error: {str(e)}", 1
 
@@ -170,47 +193,21 @@ def inspect_variables(namespace: Dict[str, Any]) -> List[Dict[str, Any]]:
     return vars_list[:100]
 
 
-def run_code_in_session(
-    code: str,
+def _execute_code_core(
+    py_code: str,
     globals_dict: Dict[str, Any],
-    session_cwd: str
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Executes Python source code string inside the session's isolated namespace.
-    Captures stdout/stderr, last-expression result, and Matplotlib / Seaborn figures.
-    """
-    out_cap = OutputCapture()
-
-    # Handle shell magic lines (e.g. !pip install ...)
-    lines = code.split("\n")
-    clean_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("!"):
-            cmd = stripped[1:]
-            out_cap.add_stream(f"$ {cmd}\n", "stdout")
-            out_s, err_s, ret = execute_shell_magic(cmd, session_cwd)
-            if out_s:
-                out_cap.add_stream(out_s, "stdout")
-            if err_s:
-                out_cap.add_error(err_s)
-        else:
-            clean_lines.append(line)
-
-    py_code = "\n".join(clean_lines).strip()
-    if not py_code:
-        var_list = inspect_variables(globals_dict)
-        return out_cap.outputs, var_list
-
-    # Redirect standard streams
+    session_cwd: str,
+    out_cap: OutputCapture
+):
+    """Inner core runner executed with output capturing."""
     old_stdout = sys.stdout
     old_stderr = sys.stderr
+
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
     sys.stdout = captured_stdout
     sys.stderr = captured_stderr
 
-    # Change working directory to session sandbox
     original_cwd = os.getcwd()
     try:
         os.chdir(session_cwd)
@@ -218,7 +215,7 @@ def run_code_in_session(
         pass
 
     try:
-        tree = ast.parse(py_code, mode="exec")
+        tree = ast.parse(py_code, filename="<quicklab-cell>", mode="exec")
         if tree.body and isinstance(tree.body[-1], ast.Expr):
             last_expr = tree.body.pop()
             if tree.body:
@@ -247,15 +244,14 @@ def run_code_in_session(
         except Exception:
             pass
 
-    # Append captured stdout and stderr (suppress non-interactive Matplotlib show warning)
-    stdout_content = captured_stdout.getvalue()
-    if stdout_content:
-        out_cap.add_stream(stdout_content, "stdout")
+    stdout_val = captured_stdout.getvalue()
+    if stdout_val:
+        out_cap.add_stream(stdout_val, "stdout")
 
-    stderr_content = captured_stderr.getvalue()
-    if stderr_content:
+    stderr_val = captured_stderr.getvalue()
+    if stderr_val:
         filtered_err = "\n".join([
-            l for l in stderr_content.split("\n")
+            l for l in stderr_val.split("\n")
             if "FigureCanvasAgg is non-interactive" not in l
         ]).strip()
         if filtered_err:
@@ -266,7 +262,61 @@ def run_code_in_session(
     for img_b64 in mpl_imgs:
         out_cap.add_image(img_b64)
 
-    # Inspect current variables
-    var_list = inspect_variables(globals_dict)
 
+def run_code_in_session(
+    code: str,
+    globals_dict: Dict[str, Any],
+    session_cwd: str,
+    timeout_seconds: Optional[int] = None,
+    stream_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Executes Python source code string inside the session's isolated namespace.
+    Enforces strict execution timeout and limits output buffer sizes.
+    """
+    timeout = timeout_seconds or settings.EXECUTION_TIMEOUT_SECONDS
+    out_cap = OutputCapture(max_bytes=settings.MAX_OUTPUT_BYTES, stream_callback=stream_callback)
+
+    # Handle shell magic lines (e.g. !pip install ...)
+    lines = code.split("\n")
+    clean_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("!"):
+            cmd = stripped[1:]
+            out_cap.add_stream(f"$ {cmd}\n", "stdout")
+            out_s, err_s, _ = execute_shell_magic(cmd, session_cwd)
+            if out_s:
+                out_cap.add_stream(out_s, "stdout")
+            if err_s:
+                out_cap.add_error(err_s)
+        else:
+            clean_lines.append(line)
+
+    py_code = "\n".join(clean_lines).strip()
+    if not py_code:
+        var_list = inspect_variables(globals_dict)
+        return out_cap.outputs, var_list
+
+    # Execute with timeout enforcement without blocking on thread join if timed out
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(
+        _execute_code_core,
+        py_code=py_code,
+        globals_dict=globals_dict,
+        session_cwd=session_cwd,
+        out_cap=out_cap
+    )
+
+    try:
+        future.result(timeout=timeout)
+        executor.shutdown(wait=True)
+    except concurrent.futures.TimeoutError:
+        out_cap.add_error(f"Execution timed out after {timeout} seconds. The kernel has interrupted the execution.")
+        executor.shutdown(wait=False, cancel_futures=True)
+    except Exception as e:
+        out_cap.add_error(f"Execution engine failure: {str(e)}")
+        executor.shutdown(wait=False)
+
+    var_list = inspect_variables(globals_dict)
     return out_cap.outputs, var_list

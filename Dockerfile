@@ -1,11 +1,23 @@
 # ============================================================
-# QuickLab V1 — Python 3.11 Execution Environment
+# Stage 1: Build Frontend Assets (React + Vite)
+# ============================================================
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /build
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# ============================================================
+# Stage 2: Production Python 3.11 Execution Environment
 # ============================================================
 FROM python:3.11-slim-bookworm
 
-# Label metadata
 LABEL maintainer="QuickLab Team"
-LABEL description="QuickLab V1 — Pre-installed scientific & ML environment (NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn)."
+LABEL description="QuickLab — Zero-setup Python 3.11 interactive sandbox (NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn)."
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -15,9 +27,11 @@ ENV PYTHONUNBUFFERED=1 \
     QUICKLAB_ENV=production \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PORT=8000
+    PORT=8000 \
+    HOST=0.0.0.0 \
+    EXECUTION_TIMEOUT_SECONDS=15
 
-# Install essential system dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgomp1 \
@@ -34,41 +48,30 @@ WORKDIR /app
 # Upgrade pip and install wheel tooling
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy requirements and install the 7 core libraries
+# Install standard Python 3.11 scientific & server dependencies
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt pytest httpx
 
-# Create temporary sandbox directories for session isolation
-RUN mkdir -p /app/sessions /sandbox && \
-    chown -R quicklab:quicklab /app /sandbox
+# Create isolated sandbox directory
+RUN mkdir -p /app/sessions && chown -R quicklab:quicklab /app
 
-# Copy server codebase and verification scripts
+# Copy server code and verification scripts
 COPY --chown=quicklab:quicklab server /app/server
 COPY --chown=quicklab:quicklab scripts /app/scripts
+COPY --chown=quicklab:quicklab tests /app/tests
 
-# Verify all 7 official QuickLab V1 libraries during build time (fails build if any library is missing)
-RUN python -c "\
-import numpy; \
-import pandas; \
-import matplotlib; \
-import seaborn; \
-import scipy; \
-import sympy; \
-import sklearn; \
-print('========================================'); \
-print('ALL 7 QUICKLAB V1 LIBRARIES VERIFIED'); \
-print('========================================')\
-"
+# Copy compiled frontend assets from Stage 1
+COPY --from=frontend-builder --chown=quicklab:quicklab /build/dist /app/dist
+
+# Verify the 7 pre-installed libraries and run test suite during image build
+RUN python scripts/test-python-packages.py && pytest tests/ -v
 
 # Switch to non-root user
 USER quicklab
 
-# Expose backend API port
 EXPOSE 8000
 
-# Health check endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Start execution server
 CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000"]

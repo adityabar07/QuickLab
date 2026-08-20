@@ -1,7 +1,7 @@
 """
-QuickLab V1 — Execution API Server
+QuickLab — Execution API Server
 FastAPI backend providing REST & WebSocket endpoints for running Python 3.11 code,
-managing temporary sessions, file uploads, kernel controls, and package introspection.
+managing temporary sessions, file uploads, kernel controls, and real-time streaming.
 """
 
 import sys
@@ -15,42 +15,34 @@ from pydantic import BaseModel
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from server.config import settings
 from server.session_manager import SessionManager
 
 app = FastAPI(
-    title="QuickLab Python 3.11 Execution Engine",
-    description="Pre-installed Python 3.11 scientific and ML execution sandbox (NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn).",
-    version="1.0.0"
+    title=settings.APP_NAME,
+    description="Pre-installed Python 3.11 scientific and ML execution sandbox.",
+    version=settings.VERSION
 )
 
 # Enable CORS for frontend and LAN access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Session manager initialization
-SANDBOX_DIR = os.getenv("SANDBOX_DIR", os.path.abspath("./sessions"))
-session_mgr = SessionManager(base_sandbox_dir=SANDBOX_DIR)
-
-# Official QuickLab V1 Package Catalog (Exactly 7 Core Libraries)
-OFFICIAL_PACKAGES = [
-    {"name": "numpy", "category": "Core Scientific", "desc": "N-dimensional arrays & numerical operations"},
-    {"name": "pandas", "category": "Data Science", "desc": "Tabular DataFrames & structured data analysis"},
-    {"name": "matplotlib", "category": "Visualization", "desc": "2D plotting and graphical figures"},
-    {"name": "seaborn", "category": "Visualization", "desc": "Statistical charts, distributions & heatmaps"},
-    {"name": "scipy", "category": "Scientific Computing", "desc": "Numerical optimization, linear algebra & science routines"},
-    {"name": "sympy", "category": "Symbolic Mathematics", "desc": "Symbolic algebra, equations & calculus"},
-    {"name": "scikit-learn", "category": "Machine Learning", "desc": "Classical machine learning models, classifiers & pipelines"}
-]
+session_mgr = SessionManager(base_sandbox_dir=str(settings.SANDBOX_DIR))
 
 
 class ExecuteRequest(BaseModel):
     code: str
     session_id: Optional[str] = None
+    timeout: Optional[int] = None
 
 
 class RestartRequest(BaseModel):
@@ -59,13 +51,14 @@ class RestartRequest(BaseModel):
 
 @app.get("/api/health")
 def health():
-    """Healthcheck returning Python version, platform, and runtime status."""
+    """Healthcheck returning Python version, platform, engine, and runtime status."""
     return {
         "status": "ok",
-        "engine": "docker",
+        "engine": "QuickLab Python 3.11 Docker Engine",
         "python_version": platform.python_version(),
         "platform": platform.platform(),
-        "total_packages": len(OFFICIAL_PACKAGES)
+        "total_packages": len(settings.OFFICIAL_PACKAGES),
+        "environment": settings.ENVIRONMENT
     }
 
 
@@ -73,7 +66,7 @@ def health():
 def get_packages():
     """Returns actual installed versions of the 7 official QuickLab V1 libraries."""
     result = []
-    for pkg in OFFICIAL_PACKAGES:
+    for pkg in settings.OFFICIAL_PACKAGES:
         pkg_name = pkg["name"]
         ver = "not installed"
         status = False
@@ -121,7 +114,10 @@ def delete_session(session_id: str):
 def execute_code(req: ExecuteRequest):
     """Executes Python code in the requested session and returns structured outputs."""
     session = session_mgr.get_or_create(req.session_id)
-    outputs, variables, exec_count = session.execute(req.code)
+    outputs, variables, exec_count = session.execute(
+        code=req.code,
+        timeout_seconds=req.timeout
+    )
     return {
         "session_id": session.session_id,
         "exec_count": exec_count,
@@ -159,13 +155,16 @@ def get_variables(session_id: str):
 async def upload_file(session_id: str = Form(...), file: UploadFile = File(...)):
     """Uploads a data file (CSV, TXT, JSON) to the session sandbox."""
     content = await file.read()
-    dest = session_mgr.save_file(session_id, file.filename, content)
-    return {
-        "session_id": session_id,
-        "filename": file.filename,
-        "size": len(content),
-        "path": dest
-    }
+    try:
+        dest = session_mgr.save_file(session_id, file.filename, content)
+        return {
+            "session_id": session_id,
+            "filename": file.filename,
+            "size": len(content),
+            "path": dest
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/files/{session_id}")
@@ -182,8 +181,8 @@ def download_session_file(session_id: str, filename: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     safe_name = os.path.basename(filename)
-    fpath = os.path.join(session.sandbox_dir, safe_name)
-    if not os.path.exists(fpath):
+    fpath = os.path.abspath(os.path.join(session.sandbox_dir, safe_name))
+    if not fpath.startswith(session.sandbox_dir) or not os.path.exists(fpath):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(fpath, filename=safe_name)
 
@@ -221,6 +220,7 @@ async def websocket_kernel(websocket: WebSocket, session_id: str):
     """Real-time streaming WebSocket endpoint for interactive execution."""
     await websocket.accept()
     session = session_mgr.get_or_create(session_id)
+    loop = asyncio.get_event_loop()
     try:
         while True:
             data = await websocket.receive_json()
@@ -233,7 +233,17 @@ async def websocket_kernel(websocket: WebSocket, session_id: str):
                 continue
 
             await websocket.send_json({"type": "status", "state": "busy"})
-            outputs, variables, exec_count = session.execute(code)
+
+            def stream_callback(item):
+                asyncio.run_coroutine_threadsafe(
+                    websocket.send_json({"type": "stream_chunk", "chunk": item}),
+                    loop
+                )
+
+            outputs, variables, exec_count = session.execute(
+                code=code,
+                stream_callback=stream_callback
+            )
             await websocket.send_json({
                 "type": "result",
                 "exec_count": exec_count,
@@ -245,11 +255,23 @@ async def websocket_kernel(websocket: WebSocket, session_id: str):
         pass
 
 
+# Serve compiled React frontend if dist exists (Production Docker build)
+if settings.DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(settings.DIST_DIR / "assets")), name="static_assets")
+
+    @app.get("/{full_path:path}")
+    def serve_frontend(full_path: str):
+        file_path = settings.DIST_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(settings.DIST_DIR / "index.html")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Starts background periodic cleaner for inactive sessions."""
     async def cleanup_loop():
         while True:
             await asyncio.sleep(300)
-            session_mgr.clean_inactive_sessions(max_idle_seconds=1800)
+            session_mgr.clean_inactive_sessions()
     asyncio.create_task(cleanup_loop())
