@@ -95,11 +95,63 @@ export default function App() {
     });
   }, [selectedId]);
 
+  const moveCell = useCallback((id, direction) => {
+    setCells(prev => {
+      const idx = prev.findIndex(c => c.id === id);
+      if (idx === -1) return prev;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const copy = [...prev];
+      const [item] = copy.splice(idx, 1);
+      copy.splice(targetIdx, 0, item);
+      return copy;
+    });
+  }, []);
+
+  const duplicateCell = useCallback((id) => {
+    setCells(prev => {
+      const idx = prev.findIndex(c => c.id === id);
+      if (idx === -1) return prev;
+      const target = prev[idx];
+      const dup = {
+        ...target,
+        id: 'c_' + Math.random().toString(36).substring(2, 9),
+        outputs: [],
+        execCount: null
+      };
+      const copy = [...prev];
+      copy.splice(idx + 1, 0, dup);
+      return copy;
+    });
+  }, []);
+
+  const toggleCollapse = useCallback((id) => {
+    setCells(prev => prev.map(c => c.id === id ? { ...c, collapsed: !c.collapsed } : c));
+  }, []);
+
+  const convertCellType = useCallback((id) => {
+    setCells(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const newType = c.type === 'code' ? 'markdown' : 'code';
+      return { ...c, type: newType, outputs: [] };
+    }));
+  }, []);
+
   const runCell = useCallback(async (id, advance = true) => {
     const cell = cells.find(c => c.id === id);
     if (!cell) return;
 
-    if (cell.type === 'markdown') return;
+    if (cell.type === 'markdown') {
+      if (advance) {
+        const idx = cells.findIndex(c => c.id === id);
+        if (idx === cells.length - 1) {
+          addCell('code', '', id);
+        } else {
+          setSelectedId(cells[idx + 1].id);
+        }
+      }
+      return;
+    }
 
     const { outputs, execCount } = await executeCode(cell.source);
     setCells(prev => prev.map(c => c.id === id ? { ...c, outputs, execCount } : c));
@@ -195,7 +247,7 @@ export default function App() {
               return (
                 <div
                   key={cell.id}
-                  className={`cell ${isSelected ? 'selected' : ''}`}
+                  className={`cell ${isSelected ? 'selected' : ''} ${cell.collapsed ? 'collapsed' : ''}`}
                   onClick={() => setSelectedId(cell.id)}
                 >
                   <div className="cell-gutter">
@@ -214,37 +266,107 @@ export default function App() {
                         {cell.type === 'markdown' ? 'markdown' : 'python'}
                       </span>
 
+                      {/* 1. Run / Render */}
                       <button
                         className="cbtn"
-                        title="Run cell (Shift+Enter)"
-                        onClick={() => runCell(cell.id, true)}
+                        title={cell.type === 'code' ? 'Run cell (Shift+Enter)' : 'Render (Shift+Enter)'}
+                        onClick={(e) => { e.stopPropagation(); runCell(cell.id, true); }}
                       >
-                        ▶
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
                       </button>
 
+                      {/* 2. Move Up */}
+                      <button
+                        className="cbtn"
+                        title="Move up"
+                        onClick={(e) => { e.stopPropagation(); moveCell(cell.id, -1); }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                      </button>
+
+                      {/* 3. Move Down */}
+                      <button
+                        className="cbtn"
+                        title="Move down"
+                        onClick={(e) => { e.stopPropagation(); moveCell(cell.id, 1); }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 5v14M5 12l7 7 7-7" />
+                        </svg>
+                      </button>
+
+                      {/* 4. Duplicate */}
+                      <button
+                        className="cbtn"
+                        title="Duplicate cell"
+                        onClick={(e) => { e.stopPropagation(); duplicateCell(cell.id); }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="9" width="12" height="12" rx="2" />
+                          <path d="M5 15V5a2 2 0 012-2h10" />
+                        </svg>
+                      </button>
+
+                      {/* 5. Collapse / Expand */}
+                      <button
+                        className="cbtn"
+                        title={cell.collapsed ? 'Expand cell' : 'Collapse cell'}
+                        onClick={(e) => { e.stopPropagation(); toggleCollapse(cell.id); }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d={cell.collapsed ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6'} />
+                        </svg>
+                      </button>
+
+                      {/* 6. Convert Type (Python <-> Markdown) */}
+                      <button
+                        className="cbtn"
+                        title={cell.type === 'code' ? 'Convert to Markdown' : 'Convert to Python Code'}
+                        onClick={(e) => { e.stopPropagation(); convertCellType(cell.id); }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M7 16V4M7 4l-3 3M7 4l3 3M17 8v12m0 0l3-3m-3 3l-3-3" />
+                        </svg>
+                      </button>
+
+                      {/* 7. Delete */}
                       <button
                         className="cbtn"
                         title="Delete cell"
-                        onClick={() => deleteCell(cell.id)}
+                        onClick={(e) => { e.stopPropagation(); deleteCell(cell.id); }}
                       >
-                        ✕
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6" />
+                        </svg>
                       </button>
                     </div>
 
-                    <CodeEditor
-                      value={cell.source}
-                      onChange={(val) => updateCellSource(cell.id, val)}
-                      onRun={() => runCell(cell.id, true)}
-                      onRunInPlace={() => runCell(cell.id, false)}
-                      mode={cell.type === 'markdown' ? 'markdown' : 'python'}
-                      theme={theme}
-                    />
+                    {!cell.collapsed ? (
+                      <>
+                        <CodeEditor
+                          value={cell.source}
+                          onChange={(val) => updateCellSource(cell.id, val)}
+                          onRun={() => runCell(cell.id, true)}
+                          onRunInPlace={() => runCell(cell.id, false)}
+                          mode={cell.type === 'markdown' ? 'markdown' : 'python'}
+                          theme={theme}
+                        />
 
-                    {cell.type === 'code' && (
-                      <TerminalOutput
-                        outputs={cell.outputs}
-                        isRunning={isRunning && isSelected}
-                      />
+                        {cell.type === 'code' && (
+                          <TerminalOutput
+                            outputs={cell.outputs}
+                            isRunning={isRunning && isSelected}
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <div className="collapsed-hint">
+                        Cell collapsed — click expand in top-right to view.
+                      </div>
                     )}
                   </div>
                 </div>
