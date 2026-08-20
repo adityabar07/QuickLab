@@ -1,7 +1,7 @@
 """
 QuickLab — Python Code Execution Engine
 Provides safe session execution with timeout enforcement, resource limits,
-rich representation capturing (Matplotlib / Seaborn, Pandas, SymPy), and real-time streaming.
+traceback sanitization (no internal path disclosure), and rich output capturing.
 """
 
 import sys
@@ -16,6 +16,7 @@ import concurrent.futures
 from typing import Dict, Any, List, Tuple, Optional, Callable
 
 from server.config import settings
+from server.security import sanitize_traceback, validate_code_input
 
 # Pre-set headless Matplotlib backend
 os.environ["MPLBACKEND"] = "Agg"
@@ -57,7 +58,10 @@ class OutputCapture:
 
     def add_error(self, text: str):
         if text:
-            self._append({"kind": "error", "text": text})
+            # Sanitize tracebacks to prevent information disclosure
+            clean_text = sanitize_traceback(text)
+            if clean_text:
+                self._append({"kind": "error", "text": clean_text})
 
     def add_result(self, text: str):
         if text is not None:
@@ -137,7 +141,7 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
 
 
 def execute_shell_magic(command: str, cwd: str) -> Tuple[str, str, int]:
-    """Executes a shell command (e.g. !ls or !pip) inside the temporary sandbox."""
+    """Executes a shell command inside the temporary sandbox."""
     try:
         proc = subprocess.run(
             command,
@@ -232,8 +236,7 @@ def _execute_code_core(
 
     except Exception:
         tb_lines = traceback.format_exception(*sys.exc_info())
-        filtered = [l for l in tb_lines if "server/execution.py" not in l]
-        err_msg = "".join(filtered).strip()
+        err_msg = "".join(tb_lines)
         out_cap.add_error(err_msg)
 
     finally:
@@ -275,10 +278,11 @@ def run_code_in_session(
     Enforces strict execution timeout and limits output buffer sizes.
     """
     timeout = timeout_seconds or settings.EXECUTION_TIMEOUT_SECONDS
+    valid_code = validate_code_input(code)
     out_cap = OutputCapture(max_bytes=settings.MAX_OUTPUT_BYTES, stream_callback=stream_callback)
 
     # Handle shell magic lines (e.g. !pip install ...)
-    lines = code.split("\n")
+    lines = valid_code.split("\n")
     clean_lines = []
     for line in lines:
         stripped = line.strip()
@@ -298,7 +302,7 @@ def run_code_in_session(
         var_list = inspect_variables(globals_dict)
         return out_cap.outputs, var_list
 
-    # Execute with timeout enforcement without blocking on thread join if timed out
+    # Execute with timeout watchdog without hanging on thread pool join
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     future = executor.submit(
         _execute_code_core,
