@@ -1,5 +1,5 @@
 """
-QuickLab — Execution API Server
+QuickLab V1 — Execution API Server
 FastAPI backend providing REST & WebSocket endpoints for running Python 3.11 code,
 managing temporary sessions, file uploads, kernel controls, and package introspection.
 """
@@ -18,8 +18,8 @@ from fastapi.responses import JSONResponse, FileResponse
 from server.session_manager import SessionManager
 
 app = FastAPI(
-    title="QuickLab Python Execution Engine",
-    description="Pre-installed Python 3.11 scientific and ML execution sandbox.",
+    title="QuickLab Python 3.11 Execution Engine",
+    description="Pre-installed Python 3.11 scientific and ML execution sandbox (NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn).",
     version="1.0.0"
 )
 
@@ -36,41 +36,15 @@ app.add_middleware(
 SANDBOX_DIR = os.getenv("SANDBOX_DIR", os.path.abspath("./sessions"))
 session_mgr = SessionManager(base_sandbox_dir=SANDBOX_DIR)
 
-# Official QuickLab Package Catalog
+# Official QuickLab V1 Package Catalog (Exactly 7 Core Libraries)
 OFFICIAL_PACKAGES = [
-    {"name": "numpy", "category": "Core Scientific", "desc": "N-dimensional array operations & linear algebra"},
-    {"name": "scipy", "category": "Core Scientific", "desc": "Scientific algorithms & numerical optimization"},
-    {"name": "sympy", "category": "Core Scientific", "desc": "Symbolic mathematics and algebra"},
-    {"name": "pandas", "category": "Data Science", "desc": "High-performance tabular data structures"},
-    {"name": "polars", "category": "Data Science", "desc": "Blazing-fast columnar DataFrame library"},
-    {"name": "statsmodels", "category": "Statistics", "desc": "Statistical modeling and econometrics"},
-    {"name": "matplotlib", "category": "Visualization", "desc": "2D plotting and figures"},
-    {"name": "seaborn", "category": "Visualization", "desc": "Statistical data visualization"},
-    {"name": "plotly", "category": "Visualization", "desc": "Interactive web-based charting"},
-    {"name": "scikit-learn", "category": "Machine Learning", "desc": "Classical ML models & preprocessing"},
-    {"name": "tensorflow", "category": "Deep Learning", "desc": "Neural networks & tensor computations"},
-    {"name": "keras", "category": "Deep Learning", "desc": "High-level deep learning API"},
-    {"name": "torch", "category": "Deep Learning", "desc": "PyTorch tensor computation & autograd"},
-    {"name": "torchvision", "category": "Deep Learning", "desc": "Computer vision models for PyTorch"},
-    {"name": "torchaudio", "category": "Deep Learning", "desc": "Audio processing models for PyTorch"},
-    {"name": "opencv-python", "category": "Computer Vision", "desc": "Computer vision & image processing"},
-    {"name": "pillow", "category": "Computer Vision", "desc": "Image manipulation library (PIL)"},
-    {"name": "imageio", "category": "Computer Vision", "desc": "Image read/write utility"},
-    {"name": "nltk", "category": "Natural Language Processing", "desc": "Natural Language Toolkit & tokenizers"},
-    {"name": "spacy", "category": "Natural Language Processing", "desc": "Industrial-strength NLP pipelines"},
-    {"name": "transformers", "category": "Natural Language Processing", "desc": "HuggingFace transformer models"},
-    {"name": "sentence-transformers", "category": "Natural Language Processing", "desc": "Dense vector sentence embeddings"},
-    {"name": "pgmpy", "category": "Probabilistic AI", "desc": "Bayesian networks & probabilistic graphical models"},
-    {"name": "networkx", "category": "Graph Algorithms", "desc": "Network and graph analysis algorithms"},
-    {"name": "openpyxl", "category": "Spreadsheets", "desc": "Read/write Excel .xlsx spreadsheets"},
-    {"name": "xlsxwriter", "category": "Spreadsheets", "desc": "Create Excel charts and formatted sheets"},
-    {"name": "h5py", "category": "File Processing", "desc": "HDF5 binary data format interface"},
-    {"name": "requests", "category": "Web & Networking", "desc": "HTTP client library"},
-    {"name": "beautifulsoup4", "category": "Web & Networking", "desc": "HTML and XML parser"},
-    {"name": "ipython", "category": "Notebook Engine", "desc": "Interactive Python execution tools"},
-    {"name": "tqdm", "category": "Utilities", "desc": "Extensible progress bars"},
-    {"name": "joblib", "category": "Utilities", "desc": "Parallel computation & model persistence"},
-    {"name": "pydantic", "category": "Utilities", "desc": "Data validation and settings management"}
+    {"name": "numpy", "category": "Core Scientific", "desc": "N-dimensional arrays & numerical operations"},
+    {"name": "pandas", "category": "Data Science", "desc": "Tabular DataFrames & structured data analysis"},
+    {"name": "matplotlib", "category": "Visualization", "desc": "2D plotting and graphical figures"},
+    {"name": "seaborn", "category": "Visualization", "desc": "Statistical charts, distributions & heatmaps"},
+    {"name": "scipy", "category": "Scientific Computing", "desc": "Numerical optimization, linear algebra & science routines"},
+    {"name": "sympy", "category": "Symbolic Mathematics", "desc": "Symbolic algebra, equations & calculus"},
+    {"name": "scikit-learn", "category": "Machine Learning", "desc": "Classical machine learning models, classifiers & pipelines"}
 ]
 
 
@@ -88,7 +62,7 @@ def health():
     """Healthcheck returning Python version, platform, and runtime status."""
     return {
         "status": "ok",
-        "engine": "QuickLab Python 3.11 Docker Engine",
+        "engine": "docker",
         "python_version": platform.python_version(),
         "platform": platform.platform(),
         "total_packages": len(OFFICIAL_PACKAGES)
@@ -97,7 +71,7 @@ def health():
 
 @app.get("/api/packages")
 def get_packages():
-    """Returns actual installed versions of all official QuickLab libraries."""
+    """Returns actual installed versions of the 7 official QuickLab V1 libraries."""
     result = []
     for pkg in OFFICIAL_PACKAGES:
         pkg_name = pkg["name"]
@@ -107,14 +81,7 @@ def get_packages():
             ver = importlib.metadata.version(pkg_name)
             status = True
         except Exception:
-            # Try module import directly
-            mod_alias = {
-                "scikit-learn": "sklearn",
-                "opencv-python": "cv2",
-                "pillow": "PIL",
-                "beautifulsoup4": "bs4",
-                "sentence-transformers": "sentence_transformers"
-            }.get(pkg_name, pkg_name)
+            mod_alias = {"scikit-learn": "sklearn"}.get(pkg_name, pkg_name)
             try:
                 mod = __import__(mod_alias)
                 ver = getattr(mod, "__version__", "installed")
@@ -190,7 +157,7 @@ def get_variables(session_id: str):
 
 @app.post("/api/files/upload")
 async def upload_file(session_id: str = Form(...), file: UploadFile = File(...)):
-    """Uploads a data file (CSV, JSON, XLSX, TXT, images) to the session sandbox."""
+    """Uploads a data file (CSV, TXT, JSON) to the session sandbox."""
     content = await file.read()
     dest = session_mgr.save_file(session_id, file.filename, content)
     return {
@@ -238,7 +205,7 @@ async def run_verification():
             [sys.executable, script_path],
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=60
         )
         return {
             "exit_code": proc.returncode,

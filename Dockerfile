@@ -1,11 +1,11 @@
 # ============================================================
-# QuickLab — Complete Python 3.11 Execution Environment
+# QuickLab V1 — Python 3.11 Execution Environment
 # ============================================================
 FROM python:3.11-slim-bookworm
 
 # Label metadata
 LABEL maintainer="QuickLab Team"
-LABEL description="Complete pre-installed Python data-science, ML, DL, NLP, and AI execution sandbox."
+LABEL description="QuickLab V1 — Pre-installed scientific & ML environment (NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn)."
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -21,9 +21,7 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgomp1 \
-    libglib2.0-0 \
     curl \
-    git \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,45 +34,30 @@ WORKDIR /app
 # Upgrade pip and install wheel tooling
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy requirements and install CPU PyTorch & all dependencies
+# Copy requirements and install the 7 core libraries
 COPY requirements.txt /app/requirements.txt
-
-# Install PyTorch CPU wheels first for optimal image size & speed, then all requirements
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Pre-download core NLTK data into shared system directory
-RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt stopwords wordnet averaged_perceptron_tagger_eng
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create temporary sandbox directories for session isolation
 RUN mkdir -p /app/sessions /sandbox && \
-    chown -R quicklab:quicklab /app /sandbox /usr/local/share/nltk_data
+    chown -R quicklab:quicklab /app /sandbox
 
 # Copy server codebase and verification scripts
 COPY --chown=quicklab:quicklab server /app/server
 COPY --chown=quicklab:quicklab scripts /app/scripts
 
-# Verify all official libraries during build time (fails build if any library is broken)
+# Verify all 7 official QuickLab V1 libraries during build time (fails build if any library is missing)
 RUN python -c "\
 import numpy; \
 import pandas; \
-import scipy; \
-import sympy; \
 import matplotlib; \
 import seaborn; \
-import plotly; \
+import scipy; \
+import sympy; \
 import sklearn; \
-import tensorflow; \
-import keras; \
-import torch; \
-import cv2; \
-import nltk; \
-import spacy; \
-import transformers; \
-import pgmpy; \
-import networkx; \
-import statsmodels; \
-print('QUICKLAB LIBRARIES VERIFIED SUCCESSFULLY')\
+print('========================================'); \
+print('ALL 7 QUICKLAB V1 LIBRARIES VERIFIED'); \
+print('========================================')\
 "
 
 # Switch to non-root user

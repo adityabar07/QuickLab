@@ -1,73 +1,25 @@
 # ============================================================
-# QuickLab — Official Python 3.11 Environment Requirements
+# QuickLab V1 — Core Python 3.11 Environment Requirements
 # ============================================================
-# All libraries below are pre-installed in the QuickLab Docker image.
-# Mutual compatibility verified for Python 3.11 (Debian Bookworm).
+# Exactly 7 pre-installed scientific, data science, and ML libraries:
+# 1. NumPy
+# 2. Pandas
+# 3. Matplotlib
+# 4. Seaborn
+# 5. SciPy
+# 6. SymPy
+# 7. Scikit-learn
 
-# --- Core Scientific Computing ---
+# --- Core 7 Libraries ---
 numpy>=1.26.4,<2.0.0
-scipy>=1.13.0,<1.15.0
-sympy>=1.12.1,<1.14.0
-
-# --- Data Science & Statistics ---
 pandas>=2.2.2,<2.3.0
-polars>=0.20.26
-statsmodels>=0.14.2
-
-# --- Data Visualization ---
 matplotlib>=3.8.4
 seaborn>=0.13.2
-plotly>=5.22.0
-
-# --- Machine Learning ---
+scipy>=1.13.0,<1.15.0
+sympy>=1.12.1,<1.14.0
 scikit-learn>=1.4.2
 
-# --- Deep Learning (CPU-Optimized & GPU-Ready) ---
-tensorflow-cpu>=2.16.1
-keras>=3.3.3
-torch>=2.3.0
-torchvision>=0.18.0
-torchaudio>=2.3.0
-
-# --- Computer Vision ---
-opencv-python-headless>=4.9.0.80
-pillow>=10.3.0
-imageio>=2.34.1
-
-# --- Natural Language Processing ---
-nltk>=3.8.1
-spacy>=3.7.4
-transformers>=4.40.2
-sentence-transformers>=2.7.0
-
-# --- Probabilistic AI ---
-pgmpy>=0.1.25
-
-# --- Graph & Network Analysis ---
-networkx>=3.3
-
-# --- File Processing & Data Formats ---
-openpyxl>=3.1.2
-xlsxwriter>=3.2.0
-h5py>=3.11.0
-
-# --- Web & Network Access ---
-requests>=2.31.0
-beautifulsoup4>=4.12.3
-
-# --- Python & Notebook Infrastructure ---
-ipython>=8.24.0
-ipykernel>=6.29.4
-jupyter-client>=8.6.1
-
-# --- Utilities & Execution Server ---
-tqdm>=4.66.4
-joblib>=1.4.2
-pydantic>=2.7.1
-python-dotenv>=1.0.1
-pyyaml>=6.0.1
+# --- Execution Server Infrastructure ---
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
-websockets>=12.0
 python-multipart>=0.0.9
-psutil>=5.9.8

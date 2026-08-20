@@ -19,9 +19,6 @@
 <!-- Marked (Markdown) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
 
-<!-- Plotly.js for interactive charts -->
-<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-
 <style>
   :root{
     --bg:#0b0f14;
@@ -294,7 +291,6 @@
   .out-table table{border-collapse:collapse;font-size:12.5px;font-family:var(--font-sans);width:100%;}
   .out-table th,.out-table td{border:1px solid var(--border);padding:6px 10px;text-align:left;}
   .out-table th{background:var(--bg-elevated);font-weight:600;}
-  .out-plotly{margin:6px 0;width:100%;min-height:350px;}
 
   .add-cell-row{display:flex;gap:10px;justify-content:center;margin:18px 0;}
   .add-cell-row button{
@@ -434,7 +430,7 @@
         <div class="side-section">
           <div class="side-title">Session Files <span id="upload-btn-icon" style="cursor:pointer;color:var(--text-dim);font-weight:400;">upload</span></div>
         </div>
-        <div class="upload-zone" id="upload-zone">Drop files here or click<br/>csv · xlsx · json · txt · png/jpg</div>
+        <div class="upload-zone" id="upload-zone">Drop files here or click<br/>csv · json · txt · png/jpg</div>
         <input type="file" id="file-input" multiple />
         <div id="file-list"></div>
       </div>
@@ -454,8 +450,8 @@
       </div>
 
       <div id="sidebar-footer">
-        <b>QuickLab Python 3.11 Backend.</b><br/>
-        All 25+ libraries (Seaborn, Plotly, PyTorch, TensorFlow, OpenCV, pgmpy, etc.) are pre-installed.
+        <b>QuickLab V1 (Python 3.11).</b><br/>
+        Pre-installed libraries: NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn.
       </div>
     </div>
 
@@ -523,7 +519,7 @@
       console.warn('Backend connection failed:', e);
     }
     backendOnline = false;
-    setKernelStatus('offline', 'Python Execution Backend Offline');
+    setKernelStatus('offline', 'Python Backend Offline');
     $('#boot').style.display = 'none';
     if (cells.length === 0) {
       addDefaultCells();
@@ -539,20 +535,20 @@
   }, 4000);
 
   function addDefaultCells(){
-    addCell('code', `# Welcome to QuickLab!
-# All official data science, ML, DL, and AI libraries are pre-installed.
+    addCell('code', `# Welcome to QuickLab V1!
+# All 7 standard libraries are pre-installed and ready out-of-the-box.
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
-import plotly.express as px
-import torch
-import cv2
+import seaborn as sns
+import scipy
+import sympy as sp
+import sklearn
 
-print("✓ QuickLab Python 3.11 Backend Environment Ready!")
+print("✓ QuickLab V1 (Python 3.11) Environment Ready!")
 df = pd.DataFrame({
-    "Library": ["NumPy", "Pandas", "Seaborn", "Plotly", "PyTorch", "TensorFlow", "OpenCV", "pgmpy"],
-    "Status": ["Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed"]
+    "Library": ["NumPy", "Pandas", "Matplotlib", "Seaborn", "SciPy", "SymPy", "Scikit-learn"],
+    "Status": ["Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed", "Pre-installed"]
 })
 df
 `, true);
@@ -707,7 +703,7 @@ df
   function renderEmptyState(){
     if (cells.length === 0){
       notebookEl.innerHTML = `<div id="empty-state"><div class="mark">Q</div><h2>Blank notebook</h2>
-      <p>Add a code cell and start writing Python. All standard libraries are already installed.</p></div>`;
+      <p>Add a code cell and start writing Python. All standard libraries (NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, Scikit-learn) are pre-installed.</p></div>`;
     }
   }
 
@@ -873,17 +869,6 @@ df
         div.className = 'out-block out-table';
         div.innerHTML = o.data;
       }
-      else if (o.kind === 'plotly'){
-        div.className = 'out-block out-plotly';
-        div.innerHTML = o.data;
-        // Trigger Plotly responsive resize / scripts
-        const scripts = div.querySelectorAll('script');
-        scripts.forEach(s => {
-          const newS = document.createElement('script');
-          newS.textContent = s.textContent;
-          document.body.appendChild(newS);
-        });
-      }
       container.appendChild(div);
     });
   }
@@ -929,12 +914,11 @@ df
 
     // Backend Execution (Docker / FastAPI Python 3.11)
     if (!backendOnline) {
-      // Check connection one more time
       const isUp = await checkBackendConnection();
       if (!isUp) {
         outputs.push({
           kind: 'error',
-          text: 'Python Execution Backend Offline.\n\nStart the QuickLab backend / Docker environment (port 8000) to execute Python code with Seaborn, Plotly, PyTorch, TensorFlow, OpenCV, pgmpy, etc.'
+          text: 'Python execution backend is offline.\n\nStart the QuickLab backend / Docker environment (port 8000) to run Python.'
         });
         c.outputs = outputs;
         c.dom && c.dom.classList.remove('running');
@@ -964,7 +948,7 @@ df
       setKernelStatus('offline', 'Python Backend Offline');
       outputs.push({
         kind: 'error',
-        text: `Connection error: Unable to reach QuickLab Python Backend at /api/execute.\n${err.message}\n\nPlease ensure the backend server is running on port 8000.`
+        text: `Python execution backend is offline.\n\nStart the QuickLab backend / Docker environment (port 8000) to run Python.`
       });
     }
 

@@ -1,7 +1,7 @@
 """
-QuickLab — Python Code Execution Engine
+QuickLab V1 — Python Code Execution Engine
 Provides safe, isolated session execution with rich representation capturing
-(Matplotlib, Plotly, Pandas DataFrames, Images, SymPy, Streams, and Shell commands).
+(Matplotlib / Seaborn figures, Pandas DataFrames, SymPy expressions, Streams, and Variables).
 """
 
 import sys
@@ -44,17 +44,13 @@ class OutputCapture:
         if html_content:
             self.outputs.append({"kind": "html", "data": html_content})
 
-    def add_plotly(self, json_or_html: str):
-        if json_or_html:
-            self.outputs.append({"kind": "plotly", "data": json_or_html})
-
     def add_image(self, b64_png: str):
         if b64_png:
             self.outputs.append({"kind": "image", "data": b64_png})
 
 
 def capture_matplotlib_figures() -> List[str]:
-    """Captures all open Matplotlib figures as base64 PNG strings and closes them."""
+    """Captures all open Matplotlib/Seaborn figures as base64 PNG strings and closes them."""
     imgs = []
     if plt is None:
         return imgs
@@ -81,7 +77,7 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
     modname = getattr(type(val), "__module__", "")
     clsname = getattr(type(val), "__name__", "")
 
-    # 1. Pandas DataFrame / Series
+    # 1. Pandas DataFrame / Series -> Render HTML Table
     if "pandas" in modname and ("DataFrame" in clsname or "Series" in clsname):
         try:
             html = val.to_html(max_rows=100)
@@ -90,57 +86,7 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
         except Exception:
             pass
 
-    # 2. Polars DataFrame / Series
-    if "polars" in modname and ("DataFrame" in clsname or "Series" in clsname):
-        try:
-            html = val._repr_html_() if hasattr(val, "_repr_html_") else str(val)
-            if "<table" in html:
-                out_cap.add_html(html)
-                return
-        except Exception:
-            pass
-
-    # 3. Plotly Figure
-    if "plotly" in modname and ("Figure" in clsname):
-        try:
-            import plotly.io as pio
-            html_div = pio.to_html(val, full_html=False, include_plotlyjs=False)
-            out_cap.add_plotly(html_div)
-            return
-        except Exception:
-            pass
-
-    # 4. PIL Image
-    if "PIL" in modname or hasattr(val, "save") and hasattr(val, "format"):
-        try:
-            buf = io.BytesIO()
-            val.save(buf, format="PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-            out_cap.add_image(b64)
-            return
-        except Exception:
-            pass
-
-    # 5. NumPy Array that represents an Image (3D uint8 or float)
-    if "numpy" in modname and clsname == "ndarray":
-        if val.ndim == 3 and val.shape[2] in (3, 4) and val.dtype.kind in ('u', 'i', 'f'):
-            try:
-                from PIL import Image
-                import numpy as np
-                if val.dtype.kind == 'f':
-                    norm_arr = (np.clip(val, 0, 1) * 255).astype(np.uint8)
-                else:
-                    norm_arr = np.clip(val, 0, 255).astype(np.uint8)
-                img = Image.fromarray(norm_arr)
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-                out_cap.add_image(b64)
-                return
-            except Exception:
-                pass
-
-    # 6. HTML repr objects
+    # 2. HTML repr objects
     if hasattr(val, "_repr_html_") and callable(getattr(val, "_repr_html_")):
         try:
             html = val._repr_html_()
@@ -150,7 +96,7 @@ def format_value_representation(val: Any, out_cap: OutputCapture):
         except Exception:
             pass
 
-    # 7. SymPy Objects
+    # 3. SymPy Objects -> Pretty format
     if "sympy" in modname:
         try:
             import sympy
@@ -231,7 +177,7 @@ def run_code_in_session(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Executes Python source code string inside the session's isolated namespace.
-    Captures stdout/stderr, last-expression result, Matplotlib figures, and Plotly charts.
+    Captures stdout/stderr, last-expression result, and Matplotlib / Seaborn figures.
     """
     out_cap = OutputCapture()
 
@@ -268,19 +214,6 @@ def run_code_in_session(
     original_cwd = os.getcwd()
     try:
         os.chdir(session_cwd)
-    except Exception:
-        pass
-
-    # Hook Plotly fig.show() to add output directly into out_cap
-    try:
-        import plotly.graph_objects as go
-        import plotly.io as pio
-
-        def custom_plotly_show(self, *args, **kwargs):
-            html_div = pio.to_html(self, full_html=False, include_plotlyjs=False)
-            out_cap.add_plotly(html_div)
-
-        go.Figure.show = custom_plotly_show
     except Exception:
         pass
 
@@ -321,7 +254,6 @@ def run_code_in_session(
 
     stderr_content = captured_stderr.getvalue()
     if stderr_content:
-        # Ignore headless Agg warning
         filtered_err = "\n".join([
             l for l in stderr_content.split("\n")
             if "FigureCanvasAgg is non-interactive" not in l
