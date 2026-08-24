@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { executeCode as apiExecuteCode } from '../lib/api';
 
 export function usePythonExecution(sessionId, onVariablesUpdate, onStatusChange) {
   const [execSeq, setExecSeq] = useState(0);
@@ -16,26 +17,16 @@ export function usePythonExecution(sessionId, onVariablesUpdate, onStatusChange)
     let nextSeq = execSeq + 1;
 
     try {
-      const res = await fetch('/api/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, session_id: sessionId })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        outputs = data.outputs || [];
-        nextSeq = data.exec_count || nextSeq;
-        if (data.variables && onVariablesUpdate) {
-          onVariablesUpdate(data.variables);
-        }
-      } else {
-        outputs.push({ kind: 'error', text: `Server error: HTTP ${res.status} ${res.statusText}` });
+      const data = await apiExecuteCode(code, sessionId);
+      outputs = data.outputs || [];
+      nextSeq = data.exec_count || nextSeq;
+      if (data.variables && onVariablesUpdate) {
+        onVariablesUpdate(data.variables);
       }
     } catch (err) {
       outputs.push({
         kind: 'error',
-        text: 'Python execution backend is offline.\n\nStart the QuickLab backend / Docker environment (port 8000) to run Python.'
+        text: err.message || 'Python execution failed. Please verify backend connection.'
       });
       if (onStatusChange) onStatusChange({ state: 'offline', label: 'Python Backend Offline' });
     } finally {

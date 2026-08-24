@@ -30,6 +30,10 @@ jobs:
         run: |
           python scripts/test-python-packages.py
 
+      - name: Run Repository Security & Secret Scan
+        run: |
+          python scripts/security_check.py
+
       - name: Run Automated Pytest Suite
         run: |
           pytest tests/ -v

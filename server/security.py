@@ -60,6 +60,11 @@ class RateLimiter:
             self.requests[key].append(now)
             return True, 0
 
+    def reset(self):
+        """Resets all tracked request timestamps (useful for tests and maintenance)."""
+        with self.lock:
+            self.requests.clear()
+
     def cleanup_old_keys(self):
         """Removes inactive keys to prevent memory leak."""
         now = time.time()

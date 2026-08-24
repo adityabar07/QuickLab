@@ -5,6 +5,7 @@ import CodeEditor from './components/CodeEditor';
 import TerminalOutput from './components/TerminalOutput';
 import { useSession } from './hooks/useSession';
 import { usePythonExecution } from './hooks/usePythonExecution';
+import { aiExplainCode, aiGenerateCode } from './lib/api';
 import './App.css';
 
 const DEFAULT_WELCOME_CODE = `# Welcome to QuickLab V1!
@@ -27,11 +28,25 @@ df
 
 export default function App() {
   const [cells, setCells] = useState([
-    { id: 'c1', type: 'code', source: DEFAULT_WELCOME_CODE, outputs: [], execCount: null, collapsed: false }
+    {
+      id: 'c1',
+      type: 'code',
+      source: DEFAULT_WELCOME_CODE,
+      outputs: [],
+      execCount: null,
+      collapsed: false,
+      aiExplanation: null,
+      aiLoading: false,
+      aiError: null
+    }
   ]);
   const [selectedId, setSelectedId] = useState('c1');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [theme, setTheme] = useState('dark');
+  const [showAiPromptModal, setShowAiPromptModal] = useState(false);
+  const [aiPromptInput, setAiPromptInput] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiPromptError, setAiPromptError] = useState(null);
 
   const {
     sessionId,
@@ -64,7 +79,10 @@ export default function App() {
       source,
       outputs: [],
       execCount: null,
-      collapsed: false
+      collapsed: false,
+      aiExplanation: null,
+      aiLoading: false,
+      aiError: null
     };
 
     setCells(prev => {
@@ -117,7 +135,8 @@ export default function App() {
         ...target,
         id: 'c_' + Math.random().toString(36).substring(2, 9),
         outputs: [],
-        execCount: null
+        execCount: null,
+        aiExplanation: null
       };
       const copy = [...prev];
       copy.splice(idx + 1, 0, dup);
@@ -136,6 +155,41 @@ export default function App() {
       return { ...c, type: newType, outputs: [] };
     }));
   }, []);
+
+  const handleExplainCode = useCallback(async (id) => {
+    const cell = cells.find(c => c.id === id);
+    if (!cell || !cell.source.trim()) return;
+
+    setCells(prev => prev.map(c => c.id === id ? { ...c, aiLoading: true, aiError: null } : c));
+    try {
+      const res = await aiExplainCode(cell.source);
+      setCells(prev => prev.map(c => c.id === id ? { ...c, aiExplanation: res.explanation, aiLoading: false } : c));
+    } catch (err) {
+      setCells(prev => prev.map(c => c.id === id ? { ...c, aiError: err.message, aiLoading: false } : c));
+    }
+  }, [cells]);
+
+  const handleGenerateCode = useCallback(async () => {
+    if (!aiPromptInput.trim()) return;
+    setAiGenerating(true);
+    setAiPromptError(null);
+    try {
+      const res = await aiGenerateCode(aiPromptInput);
+      let generatedText = res.code || '';
+      // Extract code block if wrapped in markdown
+      const match = generatedText.match(/```python\s*([\s\S]*?)\s*```/);
+      if (match) {
+        generatedText = match[1];
+      }
+      addCell('code', generatedText, selectedId);
+      setShowAiPromptModal(false);
+      setAiPromptInput('');
+    } catch (err) {
+      setAiPromptError(err.message || 'AI generation failed.');
+    } finally {
+      setAiGenerating(false);
+    }
+  }, [aiPromptInput, selectedId, addCell]);
 
   const runCell = useCallback(async (id, advance = true) => {
     const cell = cells.find(c => c.id === id);
@@ -176,7 +230,7 @@ export default function App() {
   }, [cells, executeCode]);
 
   const clearOutputs = useCallback(() => {
-    setCells(prev => prev.map(c => ({ ...c, outputs: [], execCount: null })));
+    setCells(prev => prev.map(c => ({ ...c, outputs: [], execCount: null, aiExplanation: null })));
   }, []);
 
   const exportIpynb = useCallback(() => {
@@ -277,7 +331,20 @@ export default function App() {
                         </svg>
                       </button>
 
-                      {/* 2. Move Up */}
+                      {/* 2. Explain Code with Gemini AI */}
+                      {cell.type === 'code' && (
+                        <button
+                          className="cbtn ai-tool-btn"
+                          title="Explain code with Gemini AI"
+                          onClick={(e) => { e.stopPropagation(); handleExplainCode(cell.id); }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13">
+                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* 3. Move Up */}
                       <button
                         className="cbtn"
                         title="Move up"
@@ -288,7 +355,7 @@ export default function App() {
                         </svg>
                       </button>
 
-                      {/* 3. Move Down */}
+                      {/* 4. Move Down */}
                       <button
                         className="cbtn"
                         title="Move down"
@@ -299,7 +366,7 @@ export default function App() {
                         </svg>
                       </button>
 
-                      {/* 4. Duplicate */}
+                      {/* 5. Duplicate */}
                       <button
                         className="cbtn"
                         title="Duplicate cell"
@@ -311,7 +378,7 @@ export default function App() {
                         </svg>
                       </button>
 
-                      {/* 5. Collapse / Expand */}
+                      {/* 6. Collapse / Expand */}
                       <button
                         className="cbtn"
                         title={cell.collapsed ? 'Expand cell' : 'Collapse cell'}
@@ -322,7 +389,7 @@ export default function App() {
                         </svg>
                       </button>
 
-                      {/* 6. Convert Type (Python <-> Markdown) */}
+                      {/* 7. Convert Type (Python <-> Markdown) */}
                       <button
                         className="cbtn"
                         title={cell.type === 'code' ? 'Convert to Markdown' : 'Convert to Python Code'}
@@ -333,7 +400,7 @@ export default function App() {
                         </svg>
                       </button>
 
-                      {/* 7. Delete */}
+                      {/* 8. Delete */}
                       <button
                         className="cbtn"
                         title="Delete cell"
@@ -356,10 +423,45 @@ export default function App() {
                           theme={theme}
                         />
 
+                        {/* Inline Gemini AI Explanation Card */}
+                        {cell.aiLoading && (
+                          <div className="ai-result-card animate-pulse">
+                            <div className="ai-result-header">
+                              <span className="ai-tag">✨ Generating explanation with Gemini…</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {cell.aiExplanation && (
+                          <div className="ai-result-card">
+                            <div className="ai-result-header">
+                              <span className="ai-tag">✨ Gemini AI Code Explanation</span>
+                              <button
+                                className="cbtn"
+                                onClick={() => setCells(prev => prev.map(c => c.id === cell.id ? { ...c, aiExplanation: null } : c))}
+                                title="Dismiss explanation"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <div className="ai-result-body">
+                              <pre className="ai-result-text">{cell.aiExplanation}</pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {cell.aiError && (
+                          <div className="ai-err-msg">
+                            ⚠ {cell.aiError}
+                          </div>
+                        )}
+
                         {cell.type === 'code' && (
                           <TerminalOutput
                             outputs={cell.outputs}
                             isRunning={isRunning && isSelected}
+                            cellSource={cell.source}
+                            onApplyFix={(fixedCode) => updateCellSource(cell.id, fixedCode)}
                           />
                         )}
                       </>
@@ -376,10 +478,56 @@ export default function App() {
             <div className="add-cell-row">
               <button onClick={() => addCell('code')}>+ Code</button>
               <button onClick={() => addCell('markdown')}>+ Text</button>
+              <button
+                className="ai-add-btn"
+                onClick={() => setShowAiPromptModal(true)}
+                title="Generate code using Gemini AI prompt"
+              >
+                ✨ Generate with AI
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* AI Generate Prompt Modal */}
+      {showAiPromptModal && (
+        <div className="modal-overlay" onClick={() => setShowAiPromptModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>✨ Generate Python Code with Gemini AI</h3>
+              <button className="cbtn" onClick={() => setShowAiPromptModal(false)}>✕</button>
+            </div>
+            <p className="modal-desc">
+              Describe the data analysis, machine learning model, or plotting task you want to build.
+            </p>
+            <textarea
+              className="modal-textarea"
+              rows={4}
+              placeholder="e.g. Train a Random Forest classifier on synthetic data and plot feature importances with Seaborn"
+              value={aiPromptInput}
+              onChange={(e) => setAiPromptInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  handleGenerateCode();
+                }
+              }}
+              autoFocus
+            />
+            {aiPromptError && <div className="ai-err-msg">⚠ {aiPromptError}</div>}
+            <div className="modal-footer">
+              <button className="tbtn" onClick={() => setShowAiPromptModal(false)}>Cancel</button>
+              <button
+                className="tbtn primary"
+                onClick={handleGenerateCode}
+                disabled={aiGenerating || !aiPromptInput.trim()}
+              >
+                {aiGenerating ? 'Generating…' : 'Generate & Insert Cell'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div id="statusbar">
         <span>{cells.length} cell{cells.length === 1 ? '' : 's'}</span>

@@ -1,11 +1,13 @@
 """
 QuickLab — Execution API Server
 FastAPI backend providing REST & WebSocket endpoints for running Python 3.11 code,
-managing temporary sessions, file uploads, kernel controls, and real-time streaming.
+managing temporary sessions, file uploads, kernel controls, real-time streaming,
+and secure Gemini AI assistance.
 """
 
 import sys
 import os
+import time
 import platform
 import asyncio
 import logging
@@ -36,6 +38,7 @@ from server.security import (
     validate_code_input
 )
 from server.session_manager import SessionManager
+from server.services.gemini import gemini_service
 
 # Configure server logger
 logging.basicConfig(level=logging.INFO)
@@ -70,6 +73,20 @@ class RestartRequest(BaseModel):
     session_id: str = Field(..., max_length=64)
 
 
+class AIExplainRequest(BaseModel):
+    code: str = Field(..., max_length=settings.MAX_CODE_SIZE_BYTES)
+    context: Optional[str] = Field(None, max_length=1000)
+
+
+class AIFixErrorRequest(BaseModel):
+    code: str = Field(..., max_length=settings.MAX_CODE_SIZE_BYTES)
+    error: str = Field(..., max_length=10000)
+
+
+class AIGenerateRequest(BaseModel):
+    prompt: str = Field(..., max_length=2000)
+
+
 def get_client_ip(request: Request) -> str:
     """Extracts client IP address for rate limiting."""
     forwarded = request.headers.get("X-Forwarded-For")
@@ -87,7 +104,8 @@ def health():
         "python_version": platform.python_version(),
         "platform": platform.platform(),
         "total_packages": len(settings.OFFICIAL_PACKAGES),
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
+        "ai_enabled": gemini_service.is_configured()
     }
 
 
@@ -290,6 +308,74 @@ def delete_session_file(session_id: str, filename: str, request: Request):
     return {"session_id": sid, "filename": safe_name, "deleted": True}
 
 
+# ============================================================
+# Gemini AI Assistant Endpoints
+# ============================================================
+
+@app.get("/api/ai/status")
+def ai_status():
+    """Returns whether Gemini AI assistance is configured on the backend."""
+    return {"configured": gemini_service.is_configured(), "model": settings.GEMINI_MODEL}
+
+
+@app.post("/api/ai/explain")
+async def ai_explain(req: AIExplainRequest, request: Request):
+    """Explains Python code with context on scientific libraries."""
+    client_ip = get_client_ip(request)
+    enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Explanation")
+
+    validate_code_input(req.code)
+
+    try:
+        result = await gemini_service.explain_code(req.code, req.context)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected AI explain error: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="AI assistance service error.")
+
+
+@app.post("/api/ai/fix-error")
+async def ai_fix_error(req: AIFixErrorRequest, request: Request):
+    """Diagnoses runtime/syntax errors and proposes corrected Python code."""
+    client_ip = get_client_ip(request)
+    enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Fix Error")
+
+    validate_code_input(req.code)
+
+    try:
+        result = await gemini_service.fix_error(req.code, req.error)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected AI fix error: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="AI assistance service error.")
+
+
+@app.post("/api/ai/generate")
+async def ai_generate(req: AIGenerateRequest, request: Request):
+    """Generates runnable Python code from user instructions."""
+    client_ip = get_client_ip(request)
+    enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Code Generation")
+
+    try:
+        result = await gemini_service.generate_code(req.prompt)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected AI generate error: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="AI assistance service error.")
+
+
 @app.get("/api/verify")
 async def run_verification(request: Request):
     """Runs scripts/test-python-packages.py and returns the verification report."""
@@ -380,7 +466,7 @@ async def websocket_kernel(websocket: WebSocket, session_id: str):
         logger.error(f"WebSocket error: {e}", exc_info=True)
 
 
-# Serve compiled React frontend if dist exists (Production Docker build)
+# Serve compiled React frontend if dist exists (Production single-container Docker build)
 if settings.DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(settings.DIST_DIR / "assets")), name="static_assets")
 

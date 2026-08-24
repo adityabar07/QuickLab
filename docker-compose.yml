@@ -11,10 +11,14 @@ services:
       - QUICKLAB_ENV=production
       - PORT=8000
       - HOST=0.0.0.0
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:8000}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
       - EXECUTION_TIMEOUT_SECONDS=15
       - MAX_OUTPUT_BYTES=5242880
       - MAX_ACTIVE_SESSIONS=200
       - SESSION_IDLE_TIMEOUT_SECONDS=1800
+      - RATE_LIMIT_AI_PER_MIN=20
     volumes:
       - quicklab_sessions:/app/sessions
     deploy:

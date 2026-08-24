@@ -4,7 +4,7 @@ QuickLab — Centralized Server Configuration & Security Policies
 
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 
 class Settings:
     # Service Information
@@ -16,12 +16,16 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
     
-    # CORS Configuration (Restricted, configurable via environment)
+    # CORS Configuration (Configurable via environment for deployed Vercel domain & local dev)
     raw_cors = os.getenv(
         "CORS_ORIGINS",
         "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:8000"
     )
     CORS_ORIGINS: List[str] = [origin.strip() for origin in raw_cors.split(",") if origin.strip()]
+    
+    # Google Gemini AI Integration (Backend Only - NEVER expose to frontend)
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     
     # Execution Sandbox & Resource Limits
     EXECUTION_TIMEOUT_SECONDS: int = int(os.getenv("EXECUTION_TIMEOUT_SECONDS", "15"))
@@ -39,6 +43,7 @@ class Settings:
     RATE_LIMIT_UPLOAD_PER_MIN: int = int(os.getenv("RATE_LIMIT_UPLOAD_PER_MIN", "20"))
     RATE_LIMIT_SESSION_PER_MIN: int = int(os.getenv("RATE_LIMIT_SESSION_PER_MIN", "30"))
     RATE_LIMIT_GLOBAL_PER_MIN: int = int(os.getenv("RATE_LIMIT_GLOBAL_PER_MIN", "180"))
+    RATE_LIMIT_AI_PER_MIN: int = int(os.getenv("RATE_LIMIT_AI_PER_MIN", "20"))
     
     # File Paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent

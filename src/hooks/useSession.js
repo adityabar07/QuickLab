@@ -1,4 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  checkBackendHealth,
+  fetchPackages as apiFetchPackages,
+  fetchSessionFiles,
+  uploadSessionFile,
+  deleteSessionFile,
+  restartKernel as apiRestartKernel
+} from '../lib/api';
 
 export function useSession() {
   const [sessionId] = useState(() => 'session_' + Math.random().toString(36).substring(2, 10));
@@ -11,8 +19,8 @@ export function useSession() {
   // Check backend health
   const checkHealth = useCallback(async () => {
     try {
-      const res = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
-      if (res.ok) {
+      const data = await checkBackendHealth();
+      if (data && data.status === 'ok') {
         setBackendOnline(true);
         setKernelStatus({ state: 'ready', label: 'Python 3.11 — Docker' });
         return true;
@@ -28,44 +36,35 @@ export function useSession() {
   // Fetch package catalog
   const fetchPackages = useCallback(async () => {
     try {
-      const res = await fetch('/api/packages');
-      if (res.ok) {
-        const data = await res.json();
-        setPackages(data.packages || []);
-      }
+      const data = await apiFetchPackages();
+      setPackages(data.packages || []);
     } catch {}
   }, []);
 
   // Fetch session files
   const fetchFiles = useCallback(async () => {
     try {
-      const res = await fetch(`/api/files/${sessionId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFiles(data.files || []);
-      }
+      const data = await fetchSessionFiles(sessionId);
+      setFiles(data.files || []);
     } catch {}
   }, [sessionId]);
 
   // Upload file to session
   const uploadFile = useCallback(async (file) => {
-    const formData = new FormData();
-    formData.append('session_id', sessionId);
-    formData.append('file', file);
     try {
-      const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
-      if (res.ok) {
-        await fetchFiles();
-        return true;
-      }
-    } catch {}
-    return false;
+      await uploadSessionFile(sessionId, file);
+      await fetchFiles();
+      return true;
+    } catch (err) {
+      console.error("Upload error:", err);
+      return false;
+    }
   }, [sessionId, fetchFiles]);
 
   // Delete file from session
   const deleteFile = useCallback(async (filename) => {
     try {
-      await fetch(`/api/files/${sessionId}/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+      await deleteSessionFile(sessionId, filename);
       await fetchFiles();
     } catch {}
   }, [sessionId, fetchFiles]);
@@ -74,14 +73,13 @@ export function useSession() {
   const restartKernel = useCallback(async () => {
     setKernelStatus({ state: 'busy', label: 'restarting…' });
     try {
-      await fetch('/api/restart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId })
-      });
+      await apiRestartKernel(sessionId);
       setVariables([]);
     } catch {}
-    setKernelStatus({ state: backendOnline ? 'ready' : 'offline', label: backendOnline ? 'Python 3.11 — Docker' : 'Python Backend Offline' });
+    setKernelStatus({
+      state: backendOnline ? 'ready' : 'offline',
+      label: backendOnline ? 'Python 3.11 — Docker' : 'Python Backend Offline'
+    });
   }, [sessionId, backendOnline]);
 
   useEffect(() => {
@@ -94,7 +92,7 @@ export function useSession() {
 
     const interval = setInterval(() => {
       checkHealth();
-    }, 5000);
+    }, 6000);
     return () => clearInterval(interval);
   }, [checkHealth, fetchPackages, fetchFiles]);
 
