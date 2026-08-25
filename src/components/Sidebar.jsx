@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { aiChat } from '../lib/api';
 
 export default function Sidebar({
   isOpen,
@@ -10,43 +9,10 @@ export default function Sidebar({
   variables,
   files,
   onUploadFile,
-  onDeleteFile,
-  onInsertCode
+  onDeleteFile
 }) {
   const [activeTab, setActiveTab] = useState('outline');
   const [pkgSearch, setPkgSearch] = useState('');
-
-  // AI Chat State
-  const [chatMessages, setChatMessages] = useState([
-    {
-      sender: 'ai',
-      text: 'Hello! I am QuickLab AI. Ask me anything about Python, data analysis with Pandas, plotting with Matplotlib/Seaborn, or modeling with Scikit-learn.'
-    }
-  ]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatError, setChatError] = useState(null);
-
-  const handleSendChat = async (e) => {
-    if (e) e.preventDefault();
-    const query = chatInput.trim();
-    if (!query || chatLoading) return;
-
-    const newMsgs = [...chatMessages, { sender: 'user', text: query }];
-    setChatMessages(newMsgs);
-    setChatInput('');
-    setChatLoading(true);
-    setChatError(null);
-
-    try {
-      const data = await aiChat(query);
-      setChatMessages([...newMsgs, { sender: 'ai', text: data.response || 'No response generated.' }]);
-    } catch (err) {
-      setChatError(err.message || 'AI service is temporarily unavailable.');
-    } finally {
-      setChatLoading(false);
-    }
-  };
 
   if (!isOpen) {
     return <div id="sidebar" className="collapsed" />;
@@ -68,12 +34,6 @@ export default function Sidebar({
           Outline
         </button>
         <button
-          className={`side-nav-btn ${activeTab === 'ai' ? 'active' : ''}`}
-          onClick={() => setActiveTab('ai')}
-        >
-          ✨ AI
-        </button>
-        <button
           className={`side-nav-btn ${activeTab === 'files' ? 'active' : ''}`}
           onClick={() => setActiveTab('files')}
         >
@@ -89,7 +49,7 @@ export default function Sidebar({
           className={`side-nav-btn ${activeTab === 'variables' ? 'active' : ''}`}
           onClick={() => setActiveTab('variables')}
         >
-          Vars
+          Variables
         </button>
       </div>
 
@@ -114,85 +74,6 @@ export default function Sidebar({
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* AI Assistant Tab */}
-      {activeTab === 'ai' && (
-        <div className="tab-pane active" id="tab-ai" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100% - 42px)' }}>
-          <div className="side-section">
-            <div className="side-title">QuickLab AI Assistant (Gemini)</div>
-          </div>
-          
-          <div className="ai-chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {chatMessages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`ai-chat-bubble ${msg.sender}`}
-                style={{
-                  alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '92%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  fontSize: '12.5px',
-                  lineHeight: '1.5',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  background: msg.sender === 'user' ? 'var(--accent-strong)' : 'var(--bg-elevated)',
-                  color: msg.sender === 'user' ? '#04231f' : 'var(--text)',
-                  border: msg.sender === 'user' ? 'none' : '1px solid var(--border)'
-                }}
-              >
-                {msg.text}
-              </div>
-            ))}
-            {chatLoading && (
-              <div style={{ color: 'var(--text-faint)', fontSize: '12px', fontStyle: 'italic', padding: '4px' }}>
-                QuickLab AI is thinking…
-              </div>
-            )}
-            {chatError && (
-              <div className="ai-err-msg">
-                ⚠ {chatError}
-              </div>
-            )}
-          </div>
-
-          <form onSubmit={handleSendChat} style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', display: 'flex', gap: '6px' }}>
-            <input
-              type="text"
-              placeholder="Ask QuickLab AI…"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              disabled={chatLoading}
-              style={{
-                flex: 1,
-                background: 'var(--bg-cell)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                padding: '6px 10px',
-                color: 'var(--text)',
-                fontSize: '12.5px',
-                outline: 'none'
-              }}
-            />
-            <button
-              type="submit"
-              disabled={chatLoading || !chatInput.trim()}
-              style={{
-                background: 'var(--accent-strong)',
-                color: '#04231f',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '0 12px',
-                fontWeight: '600',
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-            >
-              Send
-            </button>
-          </form>
         </div>
       )}
 
