@@ -191,3 +191,23 @@ export async function aiGenerateCode(prompt) {
   }
   return data;
 }
+
+/**
+ * AI Assistant: Primary conversational chat assistant endpoint.
+ */
+export async function aiChat(message, sessionId = null) {
+  const body = { message };
+  if (sessionId) body.session_id = sessionId;
+
+  const res = await fetch(getApiUrl('/api/ai/chat'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || `AI chat failed (HTTP ${res.status})`);
+  }
+  return data;
+}

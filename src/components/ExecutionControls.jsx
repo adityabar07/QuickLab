@@ -11,9 +11,7 @@ export default function ExecutionControls({
   kernelStatus,
   theme,
   onToggleTheme,
-  onExportJson,
-  onExportIpynb,
-  onImport
+  onExportIpynb
 }) {
   return (
     <div id="topbar">
@@ -22,7 +20,7 @@ export default function ExecutionControls({
         onClick={onToggleSidebar}
         title="Toggle sidebar (Ctrl+B)"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <path d="M9 4v16" />
         </svg>
@@ -36,14 +34,14 @@ export default function ExecutionControls({
       <div className="divider"></div>
 
       <button className="tbtn" onClick={onAddCode} title="Add code cell (B)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M12 5v14M5 12h14" />
         </svg>
         Code
       </button>
 
       <button className="tbtn" onClick={onAddMarkdown} title="Add text cell">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M12 5v14M5 12h14" />
         </svg>
         Text
@@ -57,7 +55,7 @@ export default function ExecutionControls({
       </button>
 
       <button className="tbtn" onClick={onRestartKernel} title="Restart kernel & clear session memory">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67" />
         </svg>
         Restart
@@ -83,7 +81,7 @@ export default function ExecutionControls({
       </div>
 
       <button className="tbtn" onClick={onToggleTheme} title="Toggle theme">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
         </svg>

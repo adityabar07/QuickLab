@@ -73,6 +73,11 @@ class RestartRequest(BaseModel):
     session_id: str = Field(..., max_length=64)
 
 
+class AIChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000, description="User prompt or question")
+    session_id: Optional[str] = Field(None, max_length=64)
+
+
 class AIExplainRequest(BaseModel):
     code: str = Field(..., max_length=settings.MAX_CODE_SIZE_BYTES)
     context: Optional[str] = Field(None, max_length=1000)
@@ -318,17 +323,67 @@ def ai_status():
     return {"configured": gemini_service.is_configured(), "model": settings.GEMINI_MODEL}
 
 
+@app.post("/api/ai/chat")
+def ai_chat(req: AIChatRequest, request: Request):
+    """
+    Primary Gemini AI assistant chat endpoint.
+    Communicates securely with Gemini via backend without exposing API key.
+    Request: {"message": "..."}
+    Response: {"response": "..."}
+    """
+    client_ip = get_client_ip(request)
+    enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Chat")
+
+    if "\x00" in req.message:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid message format.")
+
+    if not gemini_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is not configured on this server."
+        )
+
+    try:
+        system_instruction = (
+            "You are QuickLab AI Assistant, a helpful expert Python, data science, and machine learning pair programmer. "
+            "QuickLab is an interactive notebook environment with pre-installed scientific libraries: "
+            "NumPy, Pandas, Matplotlib, Seaborn, SciPy, SymPy, and Scikit-learn. "
+            "Provide clear, accurate, concise answers and Python code examples formatted in markdown code blocks."
+        )
+        response_text = gemini_service.generate_chat_response(req.message, system_instruction=system_instruction)
+        return {"response": response_text}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is temporarily unavailable."
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in /api/ai/chat: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="AI service is temporarily unavailable."
+        )
+
+
 @app.post("/api/ai/explain")
-async def ai_explain(req: AIExplainRequest, request: Request):
+def ai_explain(req: AIExplainRequest, request: Request):
     """Explains Python code with context on scientific libraries."""
     client_ip = get_client_ip(request)
     enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Explanation")
 
     validate_code_input(req.code)
 
+    if not gemini_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is not configured on this server."
+        )
+
     try:
-        result = await gemini_service.explain_code(req.code, req.context)
-        return result
+        result = gemini_service.explain_code(req.code, req.context)
+        return {"explanation": result}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
@@ -339,16 +394,22 @@ async def ai_explain(req: AIExplainRequest, request: Request):
 
 
 @app.post("/api/ai/fix-error")
-async def ai_fix_error(req: AIFixErrorRequest, request: Request):
+def ai_fix_error(req: AIFixErrorRequest, request: Request):
     """Diagnoses runtime/syntax errors and proposes corrected Python code."""
     client_ip = get_client_ip(request)
     enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Fix Error")
 
     validate_code_input(req.code)
 
+    if not gemini_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is not configured on this server."
+        )
+
     try:
-        result = await gemini_service.fix_error(req.code, req.error)
-        return result
+        result = gemini_service.fix_error(req.code, req.error)
+        return {"fix": result}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
@@ -359,14 +420,20 @@ async def ai_fix_error(req: AIFixErrorRequest, request: Request):
 
 
 @app.post("/api/ai/generate")
-async def ai_generate(req: AIGenerateRequest, request: Request):
+def ai_generate(req: AIGenerateRequest, request: Request):
     """Generates runnable Python code from user instructions."""
     client_ip = get_client_ip(request)
     enforce_rate_limit(client_ip, settings.RATE_LIMIT_AI_PER_MIN, "AI Code Generation")
 
+    if not gemini_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is not configured on this server."
+        )
+
     try:
-        result = await gemini_service.generate_code(req.prompt)
-        return result
+        result = gemini_service.generate_code(req.prompt)
+        return {"code": result}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
